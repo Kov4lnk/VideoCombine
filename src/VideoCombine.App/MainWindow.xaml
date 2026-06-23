@@ -15,8 +15,76 @@
                            Text="Таб «Конструктор» — Фаза C: список кроків із галочками + панель налаштувань." />
             </TabItem>
             <TabItem Header="Виконання">
-                <TextBlock Margin="16" Foreground="Gray"
-                           Text="Таб «Виконання» — оживе наступним кроком: прогрес-бари, лог, Старт/Скасувати." />
+                <Grid Margin="12">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+
+                    <!-- Тимчасове поле URL (Крок 3 перенесе його в таб «Джерела»). -->
+                    <DockPanel Grid.Row="0">
+                        <TextBlock DockPanel.Dock="Top" Margin="0,0,0,4"
+                                   Text="Посилання (по одному на рядок):" />
+                        <TextBox Text="{Binding Urls, UpdateSourceTrigger=PropertyChanged}"
+                                 AcceptsReturn="True" Height="60" VerticalScrollBarVisibility="Auto"
+                                 IsEnabled="{Binding IsRunning, Converter={StaticResource InverseBool}}" />
+                    </DockPanel>
+
+                    <!-- Кнопки керування. -->
+                    <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,8">
+                        <Button Content="▶ Старт" Width="100" Margin="0,0,8,0"
+                                Command="{Binding StartCommand}" />
+                        <Button Content="■ Скасувати" Width="100" Margin="0,0,8,0"
+                                Command="{Binding CancelCommand}" />
+                        <Button Content="📂 Відкрити результат" Width="160"
+                                Command="{Binding OpenResultCommand}" />
+                    </StackPanel>
+
+                    <!-- Загальний прогрес. -->
+                    <StackPanel Grid.Row="2" Margin="0,4">
+                        <DockPanel>
+                            <TextBlock DockPanel.Dock="Right" Text="{Binding OverallText}" Foreground="Gray" />
+                            <TextBlock Text="Загальний прогрес" FontWeight="SemiBold" />
+                        </DockPanel>
+                        <ProgressBar Height="18" Minimum="0" Maximum="1"
+                                     Value="{Binding OverallProgress}" Margin="0,2,0,0" />
+                    </StackPanel>
+
+                    <!-- Прогрес поточного кроку. -->
+                    <StackPanel Grid.Row="3" Margin="0,4">
+                        <DockPanel>
+                            <TextBlock DockPanel.Dock="Right" Text="{Binding CurrentDetail}"
+                                       Foreground="Gray" TextTrimming="CharacterEllipsis" MaxWidth="500" />
+                            <TextBlock Text="{Binding CurrentStepName}" FontWeight="SemiBold" />
+                        </DockPanel>
+                        <ProgressBar Height="14" Minimum="0" Maximum="1"
+                                     Value="{Binding StepProgress}" Margin="0,2,0,0" />
+                    </StackPanel>
+
+                    <!-- Лог: рядки з кольоровою позначкою рівня. -->
+                    <Border Grid.Row="4" Margin="0,8,0,0" BorderBrush="#DDD" BorderThickness="1">
+                        <ListBox ItemsSource="{Binding LogEntries}" BorderThickness="0"
+                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate>
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Text="{Binding Mark}" Foreground="{Binding Color}"
+                                                   FontWeight="Bold" Width="20" />
+                                        <TextBlock Text="{Binding Message}" Foreground="{Binding Color}"
+                                                   TextWrapping="Wrap" />
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                    </Border>
+
+                    <TextBlock Grid.Row="5" Margin="0,6,0,0" Foreground="Gray" FontSize="11"
+                               Text="Поки фіксований ланцюг: Завантаження → Аналіз → Нарізка (3–8с) → Склейка. Налаштування кроків — у Конструкторі (Фаза C)." />
+                </Grid>
             </TabItem>
             <TabItem Header="Налаштування">
                 <TextBlock Margin="16" Foreground="Gray"
