@@ -1,0 +1,27 @@
+<Window x:Class="VideoCombine.App.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="VideoCombine" Height="640" Width="960"
+        WindowStartupLocation="CenterScreen">
+    <DockPanel>
+        <!-- Таби верхнього рівня (розділ 4 архітектури). Поки наповнюємо лише «Виконання». -->
+        <TabControl Margin="8">
+            <TabItem Header="Джерела">
+                <TextBlock Margin="16" Foreground="Gray"
+                           Text="Таб «Джерела» — попереду (Крок 3): поле вставки посилань, список, якість." />
+            </TabItem>
+            <TabItem Header="Конструктор">
+                <TextBlock Margin="16" Foreground="Gray"
+                           Text="Таб «Конструктор» — Фаза C: список кроків із галочками + панель налаштувань." />
+            </TabItem>
+            <TabItem Header="Виконання">
+                <TextBlock Margin="16" Foreground="Gray"
+                           Text="Таб «Виконання» — оживе наступним кроком: прогрес-бари, лог, Старт/Скасувати." />
+            </TabItem>
+            <TabItem Header="Налаштування">
+                <TextBlock Margin="16" Foreground="Gray"
+                           Text="Таб «Налаштування» — Фаза C: шляхи до exe, API-ключі, ліміти, папки." />
+            </TabItem>
+        </TabControl>
+    </DockPanel>
+</Window>

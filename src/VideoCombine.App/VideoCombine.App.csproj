@@ -15,8 +15,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\VideoCombine.Core\VideoCombine.Core.csproj" />
-    <!-- Рекомендовано для MVVM: -->
-    <!-- <PackageReference Include="CommunityToolkit.Mvvm" Version="8.*" /> -->
+    <!-- MVVM-помічники: ObservableObject, RelayCommand (розділ 7 архітектури). -->
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.*" />
   </ItemGroup>
 
 </Project>
