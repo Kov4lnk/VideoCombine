@@ -1,0 +1,33 @@
+# Нормалізація переносів рядків — прибирає LF→CRLF попередження git.
+# Текст у репозиторії зберігається з LF; у робочій копії Windows git
+# може ставити CRLF, але історія лишається чистою.
+
+# За замовчуванням — авто-визначення тексту, зберігати як LF у репо.
+* text=auto eol=lf
+
+# Явно текстові файли проекту.
+*.cs       text eol=lf
+*.csproj   text eol=lf
+*.sln      text eol=crlf
+*.xaml     text eol=lf
+*.json     text eol=lf
+*.md       text eol=lf
+*.txt      text eol=lf
+*.yml      text eol=lf
+*.yaml     text eol=lf
+*.gitignore text eol=lf
+*.gitattributes text eol=lf
+
+# Бінарні — git їх не чіпає.
+*.exe      binary
+*.dll      binary
+*.png      binary
+*.jpg      binary
+*.jpeg     binary
+*.gif      binary
+*.ico      binary
+*.mp4      binary
+*.mov      binary
+*.mp3      binary
+*.wav      binary
+*.zip      binary

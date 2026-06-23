@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    VideoCombine.ConsoleRunner: наскрізний тест ланцюга БЕЗ GUI.
+    Доводить залізне правило (розділ 6): Core працює з консолі без App.
+    Запуск описано в коментарі вгорі Program.cs.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\VideoCombine.Core\VideoCombine.Core.csproj" />
+  </ItemGroup>
+
+</Project>
