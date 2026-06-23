@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    VideoCombine.App — WPF-оболонка (MVVM). Лише GUI: вікна, кнопки, лоад-бари.
+    Уся відео-логіка живе в Core. Залізне правило: App залежить від Core,
+    Core НЕ знає про App (розділ 6).
+  -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\VideoCombine.Core\VideoCombine.Core.csproj" />
+    <!-- Рекомендовано для MVVM: -->
+    <!-- <PackageReference Include="CommunityToolkit.Mvvm" Version="8.*" /> -->
+  </ItemGroup>
+
+</Project>

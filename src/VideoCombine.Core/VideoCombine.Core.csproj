@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    VideoCombine.Core — МОЗОК програми. НЕ знає про WPF (розділ 6).
+    Звичайна бібліотека: можна ганяти з консолі, тестів, у майбутньому з веб-морди.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+  </PropertyGroup>
+
+</Project>

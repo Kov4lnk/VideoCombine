@@ -1,0 +1,61 @@
+# .NET build output
+bin/
+obj/
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+[Ww][Ii][Nn]32/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+*.user
+*.suo
+*.userprefs
+
+# Visual Studio / Rider
+.vs/
+.idea/
+*.csproj.user
+*.sln.docstates
+
+# Build / test artifacts
+[Tt]est[Rr]esults/
+*.trx
+*.coverage
+*.coveragexml
+artifacts/
+
+# NuGet
+*.nupkg
+*.snupkg
+.nuget/
+packages/
+
+# Generated / temp
+*.tmp
+*.log
+
+# --- VideoCombine specifics ---
+# Робочі тимчасові файли прогону (розділ 9 — стан не зберігаємо)
+work/
+output/
+temp/
+
+# API-ключі та секрети — НІКОЛИ не комітимо (розділ 9, 4.3)
+*.secrets.json
+secrets.json
+appsettings.secrets.json
+.env
+
+# Зовнішні бінарники (ffmpeg / yt-dlp / real-esrgan / whisper) — не в репозиторій
+tools/*.exe
+ffmpeg.exe
+ffprobe.exe
+yt-dlp.exe
+
+# Кеш згенерованих медіа (локальний, не версіонуємо)
+media-cache/
+
+# OS
+Thumbs.db
+.DS_Store
