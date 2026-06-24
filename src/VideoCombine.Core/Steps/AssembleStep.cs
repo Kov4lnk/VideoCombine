@@ -117,8 +117,15 @@ public sealed class AssembleStep : IStep
         var filter = BuildConcatFilter(
             segments.Count, _settings.TargetWidth, _settings.TargetHeight, _settings.TargetFps);
 
-        args.Add("-filter_complex");
-        args.Add(filter);
+        // Граф фільтрів пишемо у ФАЙЛ і передаємо через -filter_complex_script, а не
+        // -filter_complex. Інакше на великій к-сті сегментів (сотні) стрічка фільтра
+        // роздуває командний рядок понад ліміт Windows (~32 КБ) і CreateProcess падає
+        // з "The filename or extension is too long" ще до старту ffmpeg.
+        var filterPath = Path.Combine(context.WorkingDirectory, "concat_filter.txt");
+        await File.WriteAllTextAsync(filterPath, filter, new UTF8Encoding(false), token);
+
+        args.Add("-filter_complex_script");
+        args.Add(filterPath);
         args.Add("-map"); args.Add("[outv]");
         args.Add("-map"); args.Add("[outa]");
         args.AddRange(BuildVideoCodecArgs(
