@@ -143,6 +143,43 @@ public sealed class StepLogicTests
         Assert.Contains("[v0][a0]concat=n=1:v=1:a=1[outv][outa]", f);
     }
 
+    // --- AssembleStep.BuildVideoCodecArgs: CPU/GPU гілки кодека ---
+
+    [Fact]
+    public void BuildVideoCodecArgs_libx264_дає_crf_і_пресет()
+    {
+        var a = AssembleStep.BuildVideoCodecArgs(
+            codec: "libx264", x264Preset: "medium", crf: 20, nvencPreset: "p5", nvencCq: 23);
+
+        Assert.Equal(
+            new[] { "-c:v", "libx264", "-preset", "medium", "-crf", "20" }, a);
+    }
+
+    [Fact]
+    public void BuildVideoCodecArgs_nvenc_дає_cq_без_crf()
+    {
+        var a = AssembleStep.BuildVideoCodecArgs(
+            codec: "nvenc", x264Preset: "medium", crf: 20, nvencPreset: "p5", nvencCq: 23);
+
+        Assert.Equal(
+            new[] { "-c:v", "h264_nvenc", "-preset", "p5", "-rc", "vbr", "-cq", "23", "-b:v", "0" }, a);
+        // NVENC не розуміє -crf — його тут бути не повинно.
+        Assert.DoesNotContain("-crf", a);
+        // І не libx264.
+        Assert.DoesNotContain("libx264", a);
+    }
+
+    [Fact]
+    public void BuildVideoCodecArgs_невідомий_кодек_відкочується_на_libx264()
+    {
+        // Будь-що, крім "nvenc", трактуємо як CPU-шлях (безпечний дефолт).
+        var a = AssembleStep.BuildVideoCodecArgs(
+            codec: "щось_дивне", x264Preset: "slow", crf: 18, nvencPreset: "p7", nvencCq: 19);
+
+        Assert.Equal(
+            new[] { "-c:v", "libx264", "-preset", "slow", "-crf", "18" }, a);
+    }
+
     // --- DownloadSettings.BuildFormatSelector: селектор якості yt-dlp ---
 
     [Theory]

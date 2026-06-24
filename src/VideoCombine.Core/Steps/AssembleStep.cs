@@ -99,6 +99,11 @@ public sealed class AssembleStep : IStep
         IReadOnlyList<Segment> segments, PipelineContext context,
         string outputPath, IProgressReporter progress, CancellationToken token)
     {
+        // Який відеокодек реально вживаємо. NVENC просять явно (VideoCodec="nvenc"),
+        // але якщо GPU недоступний і дозволено fallback — тихо вертаємось на libx264,
+        // щоб прогін не падав через відсутність відеокарти/драйвера.
+        var codec = await ResolveVideoCodecAsync(context.Settings.FfmpegPath, progress, token);
+
         var args = new List<string>();
         foreach (var seg in segments)
         {
@@ -108,6 +113,7 @@ public sealed class AssembleStep : IStep
 
         // Кожен вхід приводимо до спільного формату, ІНАКШЕ concat падає (код -22),
         // коли сегменти різної роздільності/fps (напр. 1080p + 720p джерела).
+        // Нормалізація лишається на CPU; h264_nvenc приймає кадри з софт-фільтрів сам.
         var filter = BuildConcatFilter(
             segments.Count, _settings.TargetWidth, _settings.TargetHeight, _settings.TargetFps);
 
@@ -115,9 +121,8 @@ public sealed class AssembleStep : IStep
         args.Add(filter);
         args.Add("-map"); args.Add("[outv]");
         args.Add("-map"); args.Add("[outa]");
-        args.Add("-c:v"); args.Add("libx264");
-        args.Add("-preset"); args.Add(_settings.EncodePreset);
-        args.Add("-crf"); args.Add(_settings.Crf.ToString());
+        args.AddRange(BuildVideoCodecArgs(
+            codec, _settings.EncodePreset, _settings.Crf, _settings.NvencPreset, _settings.NvencCq));
         args.Add("-c:a"); args.Add("aac");
         args.Add("-y"); args.Add(outputPath);
 
@@ -126,6 +131,115 @@ public sealed class AssembleStep : IStep
 
         if (code != 0)
             throw new InvalidOperationException($"ffmpeg concat-encode код {code}");
+    }
+
+    /// <summary>
+    /// Вирішує, яким відеокодеком кодувати. "libx264" — без перевірок. "nvenc" —
+    /// пробуємо GPU; якщо недоступний і AllowGpuFallback=true, відкочуємось на libx264
+    /// з попередженням; інакше кидаємо помилку (явний вибір без fallback).
+    /// </summary>
+    private async Task<string> ResolveVideoCodecAsync(
+        string ffmpegPath, IProgressReporter progress, CancellationToken token)
+    {
+        if (!_settings.VideoCodec.Equals("nvenc", StringComparison.OrdinalIgnoreCase))
+            return "libx264";
+
+        if (await ProbeNvencAsync(_runner, ffmpegPath, token))
+        {
+            progress.Log(LogLevel.Info, "NVENC доступний — кодуємо на GPU (h264_nvenc)");
+            return "nvenc";
+        }
+
+        if (_settings.AllowGpuFallback)
+        {
+            progress.Log(LogLevel.Warning,
+                "NVENC недоступний (немає GPU/драйвера або ffmpeg без nvenc) — відкат на CPU (libx264)");
+            return "libx264";
+        }
+
+        throw new InvalidOperationException(
+            "Обрано NVENC, але h264_nvenc недоступний, а fallback вимкнено (AllowGpuFallback=false)");
+    }
+
+    // Кеш проби NVENC у межах процесу: пробуємо раз, далі миттєво.
+    // Ключ — шлях до ffmpeg (різні білди можуть мати/не мати nvenc).
+    private static readonly Dictionary<string, bool> _nvencProbeCache = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly SemaphoreSlim _probeGate = new(1, 1);
+
+    /// <summary>
+    /// Мікро-прогін, що перевіряє реальну доступність h264_nvenc: кодує кілька
+    /// кадрів синтетичного відео в null-вивід (частки секунди). Код 0 → GPU/драйвер
+    /// є. Результат кешується на час процесу, щоб не ганяти пробу щоразу.
+    /// </summary>
+    public static async Task<bool> ProbeNvencAsync(ProcessRunner runner, string ffmpegPath, CancellationToken token)
+    {
+        await _probeGate.WaitAsync(token);
+        try
+        {
+            if (_nvencProbeCache.TryGetValue(ffmpegPath, out var cached))
+                return cached;
+
+            var args = new[]
+            {
+                "-hide_banner", "-loglevel", "error",
+                // 320x240 — НЕ менше: у h264_nvenc є мінімальна роздільність кадру,
+                // на дрібному (напр. 128x128) ініціалізація енкодера падає з
+                // "Frame Dimension less than the minimum supported value" і проба
+                // хибно вирішить, що GPU недоступний.
+                "-f", "lavfi", "-i", "nullsrc=s=320x240:d=0.1",
+                "-c:v", "h264_nvenc",
+                "-f", "null", "-"
+            };
+
+            bool ok;
+            try
+            {
+                var code = await runner.RunAsync(ffmpegPath, args, _ => { }, token);
+                ok = code == 0;
+            }
+            catch (OperationCanceledException)
+            {
+                throw; // скасування — не кешуємо, прокидаємо далі
+            }
+            catch
+            {
+                ok = false; // ffmpeg не стартував тощо — вважаємо недоступним
+            }
+
+            _nvencProbeCache[ffmpegPath] = ok;
+            return ok;
+        }
+        finally
+        {
+            _probeGate.Release();
+        }
+    }
+
+    /// <summary>
+    /// Будує аргументи відеокодека. Гілки CPU/GPU несумісні за прапорцями:
+    ///   • libx264 — якість через -crf, пресет medium/slow/…;
+    ///   • h264_nvenc — НЕ розуміє -crf; якість через -rc vbr -cq N -b:v 0,
+    ///     пресети p1 (найшвидший) … p7 (найкращий). Винесено окремо й публічно — для тесту.
+    /// </summary>
+    public static IReadOnlyList<string> BuildVideoCodecArgs(
+        string codec, string x264Preset, int crf, string nvencPreset, int nvencCq)
+    {
+        if (codec.Equals("nvenc", StringComparison.OrdinalIgnoreCase))
+            return new[]
+            {
+                "-c:v", "h264_nvenc",
+                "-preset", nvencPreset,
+                "-rc", "vbr",
+                "-cq", nvencCq.ToString(),
+                "-b:v", "0"
+            };
+
+        return new[]
+        {
+            "-c:v", "libx264",
+            "-preset", x264Preset,
+            "-crf", crf.ToString()
+        };
     }
 
     private static void ReportFfmpegLine(string line, IProgressReporter progress)
@@ -215,6 +329,31 @@ public sealed class AssembleSettings
     // Параметри перекодування (режим encode).
     public string EncodePreset { get; set; } = "medium";
     public int Crf { get; set; } = 20;
+
+    /// <summary>
+    /// Відеокодек склейки: "libx264" (CPU, дефолт — макс. якість/детермінізм) |
+    /// "nvenc" (GPU h264_nvenc, 3-10x швидше). NVENC просять явно; якщо GPU
+    /// недоступний — див. AllowGpuFallback. UI вибору з'явиться у Фазі C.
+    /// </summary>
+    public string VideoCodec { get; set; } = "libx264";
+
+    /// <summary>
+    /// Пресет NVENC: p1 (найшвидший) … p7 (найкращий). p5 — баланс.
+    /// Окремий від EncodePreset, бо шкали CPU/GPU несумісні.
+    /// </summary>
+    public string NvencPreset { get; set; } = "p5";
+
+    /// <summary>
+    /// Якість NVENC (constant quality, rc=vbr): менше = краще/більший файл.
+    /// Аналог CRF, але шкала інша — 23 ≈ візуально близько до x264 crf 20.
+    /// </summary>
+    public int NvencCq { get; set; } = 23;
+
+    /// <summary>
+    /// Якщо обрано NVENC, але GPU недоступний — тихо відкотитись на libx264
+    /// (true, дефолт) чи впасти з помилкою (false).
+    /// </summary>
+    public bool AllowGpuFallback { get; set; } = true;
 
     // Спільний формат, до якого нормалізуються сегменти перед склейкою
     // (режим encode). Дефолт 1080p/30fps (розділ 7.5). Потрібно, бо concat

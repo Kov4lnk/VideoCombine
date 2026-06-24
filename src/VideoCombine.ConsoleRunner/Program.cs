@@ -47,7 +47,14 @@ var steps = new List<IStep>
     new DownloadStep(runner, new DownloadSettings { Urls = args.ToList(), Quality = "720p" }),
     new AnalyzeStep(runner),
     new CutStep(runner, new CutSettings { Mode = "random", MinSec = 3, MaxSec = 8 }),
-    new AssembleStep(runner, new AssembleSettings { Mode = "encode", Order = "sequential" })
+    new AssembleStep(runner, new AssembleSettings
+    {
+        Mode = "encode",
+        Order = "sequential",
+        // VC_VCODEC=nvenc → склейка на GPU (h264_nvenc), інакше libx264 (дефолт).
+        // Для живого заміру швидкості NVENC проти CPU без UI.
+        VideoCodec = Environment.GetEnvironmentVariable("VC_VCODEC") is { Length: > 0 } vc ? vc : "libx264"
+    })
 };
 
 var context = new PipelineContext
