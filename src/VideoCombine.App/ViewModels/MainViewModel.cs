@@ -8,11 +8,13 @@ namespace VideoCombine.App.ViewModels;
 public sealed class MainViewModel
 {
     public SourcesViewModel Sources { get; }
+    public BuilderViewModel Builder { get; }
     public ExecutionViewModel Execution { get; }
 
     public MainViewModel()
     {
         Sources = new SourcesViewModel();
-        Execution = new ExecutionViewModel(Sources);
+        Builder = new BuilderViewModel();
+        Execution = new ExecutionViewModel(Sources, Builder);
     }
 }

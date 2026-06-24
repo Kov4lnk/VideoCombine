@@ -25,10 +25,12 @@ using VideoCombine.Core.Steps;
 public sealed partial class ExecutionViewModel : ObservableObject, IPipelineProgress, IProgressReporter
 {
     private readonly SourcesViewModel _sources;
+    private readonly BuilderViewModel _builder;
 
-    public ExecutionViewModel(SourcesViewModel sources)
+    public ExecutionViewModel(SourcesViewModel sources, BuilderViewModel builder)
     {
         _sources = sources;
+        _builder = builder;
         // Старт залежить від наявності валідних джерел — оновлюємо, коли список змінюється.
         _sources.Sources.CollectionChanged += (_, _) => StartCommand.NotifyCanExecuteChanged();
     }
@@ -80,8 +82,8 @@ public sealed partial class ExecutionViewModel : ObservableObject, IPipelineProg
         {
             new DownloadStep(runner, new DownloadSettings { Urls = urls.ToList(), Quality = _sources.GetQualityValue() }),
             new AnalyzeStep(runner),
-            new CutStep(runner, new CutSettings { Mode = "random", MinSec = 3, MaxSec = 8 }),
-            new AssembleStep(runner, new AssembleSettings { Mode = "encode", Order = "sequential" })
+            new CutStep(runner, _builder.BuildCutSettings()),
+            new AssembleStep(runner, _builder.BuildAssembleSettings())
         };
 
         var context = new PipelineContext
