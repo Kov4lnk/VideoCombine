@@ -47,6 +47,9 @@ secrets.json
 appsettings.secrets.json
 .env
 
+# Глобальні налаштування — машинозалежні шляхи (на відміну від recipes/, які версіонуємо)
+settings.json
+
 # Зовнішні бінарники (ffmpeg / yt-dlp / real-esrgan / whisper) — не в репозиторій
 tools/*.exe
 ffmpeg.exe
