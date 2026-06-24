@@ -7,17 +7,74 @@
         <!-- Таби верхнього рівня (розділ 4 архітектури). Поки наповнюємо лише «Виконання». -->
         <TabControl Margin="8">
             <TabItem Header="Джерела">
-                <TextBlock Margin="16" Foreground="Gray"
-                           Text="Таб «Джерела» — попереду (Крок 3): поле вставки посилань, список, якість." />
+                <Grid Margin="12" DataContext="{Binding Sources}">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+
+                    <!-- Єдине поле вставки: одне посилання або пачка по рядках (розділ 3.1). -->
+                    <DockPanel Grid.Row="0">
+                        <TextBlock DockPanel.Dock="Top" Margin="0,0,0,4"
+                                   Text="Посилання (одне або кілька, по одному на рядок):" />
+                        <TextBox Text="{Binding InputText, UpdateSourceTrigger=PropertyChanged}"
+                                 AcceptsReturn="True" Height="70" VerticalScrollBarVisibility="Auto" />
+                    </DockPanel>
+
+                    <!-- Дії + вибір якості. -->
+                    <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,8">
+                        <Button Content="＋ Додати" Width="100" Margin="0,0,8,0"
+                                Command="{Binding AddCommand}" />
+                        <Button Content="Очистити все" Width="100" Margin="0,0,16,0"
+                                Command="{Binding ClearCommand}" />
+                        <TextBlock Text="Якість:" VerticalAlignment="Center" Margin="0,0,6,0" />
+                        <ComboBox Width="120" VerticalAlignment="Center"
+                                  ItemsSource="{Binding QualityOptions}"
+                                  SelectedItem="{Binding Quality}" />
+                    </StackPanel>
+
+                    <TextBlock Grid.Row="2" Margin="0,0,0,4" Foreground="Gray"
+                               Text="Додані джерела:" />
+
+                    <!-- Список доданих: посилання + статус валідації. -->
+                    <Border Grid.Row="3" BorderBrush="#DDD" BorderThickness="1">
+                        <ListBox ItemsSource="{Binding Sources}" BorderThickness="0"
+                                 HorizontalContentAlignment="Stretch"
+                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid Margin="2">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="{Binding Url}"
+                                                   TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                                        <TextBlock Grid.Column="1" Text="{Binding StatusText}"
+                                                   Foreground="{Binding StatusColor}" Margin="8,0"
+                                                   VerticalAlignment="Center" />
+                                        <Button Grid.Column="2" Content="✕" Width="24" Height="22"
+                                                ToolTip="Видалити"
+                                                Command="{Binding DataContext.RemoveCommand,
+                                                          RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                                CommandParameter="{Binding}" />
+                                    </Grid>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                    </Border>
+                </Grid>
             </TabItem>
             <TabItem Header="Конструктор">
                 <TextBlock Margin="16" Foreground="Gray"
                            Text="Таб «Конструктор» — Фаза C: список кроків із галочками + панель налаштувань." />
             </TabItem>
             <TabItem Header="Виконання">
-                <Grid Margin="12">
+                <Grid Margin="12" DataContext="{Binding Execution}">
                     <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
@@ -25,17 +82,8 @@
                         <RowDefinition Height="Auto" />
                     </Grid.RowDefinitions>
 
-                    <!-- Тимчасове поле URL (Крок 3 перенесе його в таб «Джерела»). -->
-                    <DockPanel Grid.Row="0">
-                        <TextBlock DockPanel.Dock="Top" Margin="0,0,0,4"
-                                   Text="Посилання (по одному на рядок):" />
-                        <TextBox Text="{Binding Urls, UpdateSourceTrigger=PropertyChanged}"
-                                 AcceptsReturn="True" Height="60" VerticalScrollBarVisibility="Auto"
-                                 IsEnabled="{Binding IsRunning, Converter={StaticResource InverseBool}}" />
-                    </DockPanel>
-
-                    <!-- Кнопки керування. -->
-                    <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,8">
+                    <!-- Кнопки керування. Джерела беруться з таба «Джерела». -->
+                    <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,8">
                         <Button Content="▶ Старт" Width="100" Margin="0,0,8,0"
                                 Command="{Binding StartCommand}" />
                         <Button Content="■ Скасувати" Width="100" Margin="0,0,8,0"
@@ -45,17 +93,21 @@
                     </StackPanel>
 
                     <!-- Загальний прогрес. -->
-                    <StackPanel Grid.Row="2" Margin="0,4">
+                    <StackPanel Grid.Row="1" Margin="0,4">
                         <DockPanel>
                             <TextBlock DockPanel.Dock="Right" Text="{Binding OverallText}" Foreground="Gray" />
-                            <TextBlock Text="Загальний прогрес" FontWeight="SemiBold" />
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="Загальний прогрес" FontWeight="SemiBold" />
+                                <TextBlock Text="{Binding ElapsedText}" Foreground="#0066CC"
+                                           Margin="12,0,0,0" FontWeight="SemiBold" />
+                            </StackPanel>
                         </DockPanel>
                         <ProgressBar Height="18" Minimum="0" Maximum="1"
                                      Value="{Binding OverallProgress}" Margin="0,2,0,0" />
                     </StackPanel>
 
                     <!-- Прогрес поточного кроку. -->
-                    <StackPanel Grid.Row="3" Margin="0,4">
+                    <StackPanel Grid.Row="2" Margin="0,4">
                         <DockPanel>
                             <TextBlock DockPanel.Dock="Right" Text="{Binding CurrentDetail}"
                                        Foreground="Gray" TextTrimming="CharacterEllipsis" MaxWidth="500" />
@@ -66,7 +118,7 @@
                     </StackPanel>
 
                     <!-- Лог: рядки з кольоровою позначкою рівня. -->
-                    <Border Grid.Row="4" Margin="0,8,0,0" BorderBrush="#DDD" BorderThickness="1">
+                    <Border Grid.Row="3" Margin="0,8,0,0" BorderBrush="#DDD" BorderThickness="1">
                         <ListBox ItemsSource="{Binding LogEntries}" BorderThickness="0"
                                  ScrollViewer.HorizontalScrollBarVisibility="Disabled">
                             <ListBox.ItemTemplate>
@@ -82,7 +134,7 @@
                         </ListBox>
                     </Border>
 
-                    <TextBlock Grid.Row="5" Margin="0,6,0,0" Foreground="Gray" FontSize="11"
+                    <TextBlock Grid.Row="4" Margin="0,6,0,0" Foreground="Gray" FontSize="11"
                                Text="Поки фіксований ланцюг: Завантаження → Аналіз → Нарізка (3–8с) → Склейка. Налаштування кроків — у Конструкторі (Фаза C)." />
                 </Grid>
             </TabItem>

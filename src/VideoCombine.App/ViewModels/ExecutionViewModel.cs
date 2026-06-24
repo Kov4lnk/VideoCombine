@@ -1,8 +1,10 @@
 namespace VideoCombine.App.ViewModels;
 
 using System.Collections.ObjectModel;
+using System.Diagnostics;
 using System.IO;
 using System.Windows;
+using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using VideoCombine.Core.External;
@@ -22,9 +24,17 @@ using VideoCombine.Core.Steps;
 /// </summary>
 public sealed partial class ExecutionViewModel : ObservableObject, IPipelineProgress, IProgressReporter
 {
+    private readonly SourcesViewModel _sources;
+
+    public ExecutionViewModel(SourcesViewModel sources)
+    {
+        _sources = sources;
+        // Старт залежить від наявності валідних джерел — оновлюємо, коли список змінюється.
+        _sources.Sources.CollectionChanged += (_, _) => StartCommand.NotifyCanExecuteChanged();
+    }
+
     // --- Поля для прив'язки (генерують властивості + сповіщення) ---
 
-    [ObservableProperty] private string _urls = "";
     [ObservableProperty] private bool _isRunning;
     [ObservableProperty] private string _currentStepName = "Очікування";
     [ObservableProperty] private string _currentDetail = "";
@@ -33,20 +43,27 @@ public sealed partial class ExecutionViewModel : ObservableObject, IPipelineProg
     [ObservableProperty] private string _overallText = "";
     [ObservableProperty] private string? _finalOutputPath;
 
+    /// <summary>Текст таймера: живий під час прогону, підсумковий по завершенні.</summary>
+    [ObservableProperty] private string _elapsedText = "";
+
     public ObservableCollection<LogEntry> LogEntries { get; } = new();
 
     private CancellationTokenSource? _cts;
 
+    // Вимір часу прогону + тікер, що оновлює ElapsedText щосекунди.
+    private readonly Stopwatch _stopwatch = new();
+    private DispatcherTimer? _ticker;
+
     // --- Команди ---
 
-    /// <summary>Старт доступний лише коли не біжимо й є хоч одне посилання.</summary>
-    private bool CanStart() => !IsRunning && SplitUrls().Length > 0;
+    /// <summary>Старт доступний лише коли не біжимо й є хоч одне валідне джерело.</summary>
+    private bool CanStart() => !IsRunning && _sources.GetUsableUrls().Count > 0;
 
     [RelayCommand(CanExecute = nameof(CanStart))]
     private async Task StartAsync()
     {
-        var urls = SplitUrls();
-        if (urls.Length == 0) return;
+        var urls = _sources.GetUsableUrls();
+        if (urls.Count == 0) return;
 
         IsRunning = true;
         LogEntries.Clear();
@@ -54,13 +71,14 @@ public sealed partial class ExecutionViewModel : ObservableObject, IPipelineProg
         OverallProgress = 0;
         StepProgress = 0;
         _cts = new CancellationTokenSource();
+        StartTimer();
 
         var settings = BuildSettings();
         var runner = new ProcessRunner();
 
         var steps = new List<IStep>
         {
-            new DownloadStep(runner, new DownloadSettings { Urls = urls.ToList(), Quality = "720p" }),
+            new DownloadStep(runner, new DownloadSettings { Urls = urls.ToList(), Quality = _sources.GetQualityValue() }),
             new AnalyzeStep(runner),
             new CutStep(runner, new CutSettings { Mode = "random", MinSec = 3, MaxSec = 8 }),
             new AssembleStep(runner, new AssembleSettings { Mode = "encode", Order = "sequential" })
@@ -92,6 +110,7 @@ public sealed partial class ExecutionViewModel : ObservableObject, IPipelineProg
         }
         finally
         {
+            StopTimer();
             IsRunning = false;
             _cts?.Dispose();
             _cts = null;
@@ -159,9 +178,6 @@ public sealed partial class ExecutionViewModel : ObservableObject, IPipelineProg
 
     // --- Допоміжне ---
 
-    private string[] SplitUrls() =>
-        Urls.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-
     private void AppendLog(LogLevel level, string message) =>
         OnUi(() => AppendLogCore(LogEntry.From(level, message)));
 
@@ -177,6 +193,36 @@ public sealed partial class ExecutionViewModel : ObservableObject, IPipelineProg
             action();
     }
 
+    // --- Таймер прогону ---
+
+    private void StartTimer()
+    {
+        _stopwatch.Restart();
+        ElapsedText = "0:00";
+        // Тікер на UI-потоці — оновлює текст щосекунди, поки йде прогон.
+        _ticker = new DispatcherTimer(DispatcherPriority.Normal)
+        {
+            Interval = TimeSpan.FromSeconds(1)
+        };
+        _ticker.Tick += (_, _) => ElapsedText = Format(_stopwatch.Elapsed);
+        _ticker.Start();
+    }
+
+    private void StopTimer()
+    {
+        _stopwatch.Stop();
+        _ticker?.Stop();
+        _ticker = null;
+        // Підсумковий час по завершенні.
+        ElapsedText = $"{Format(_stopwatch.Elapsed)} (завершено)";
+    }
+
+    /// <summary>Час як m:ss або h:mm:ss.</summary>
+    private static string Format(TimeSpan t) =>
+        t.TotalHours >= 1
+            ? $"{(int)t.TotalHours}:{t.Minutes:D2}:{t.Seconds:D2}"
+            : $"{t.Minutes}:{t.Seconds:D2}";
+
     // Команди-залежності: коли змінюється IsRunning / URL / шлях — оновити доступність кнопок.
     partial void OnIsRunningChanged(bool value)
     {
@@ -185,7 +231,6 @@ public sealed partial class ExecutionViewModel : ObservableObject, IPipelineProg
         OpenResultCommand.NotifyCanExecuteChanged();
     }
 
-    partial void OnUrlsChanged(string value) => StartCommand.NotifyCanExecuteChanged();
     partial void OnFinalOutputPathChanged(string? value) => OpenResultCommand.NotifyCanExecuteChanged();
 
     /// <summary>Тимчасові налаштування (Фаза C винесе їх у таб «Налаштування»).</summary>

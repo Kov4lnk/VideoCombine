@@ -118,6 +118,31 @@ public sealed class StepLogicTests
         Assert.Equal(segs.Select(s => s.Id).OrderBy(x => x), a.OrderBy(x => x)); // нічого не загублено
     }
 
+    // --- AssembleStep.BuildConcatFilter: нормалізація + concat ---
+
+    [Fact]
+    public void BuildConcatFilter_нормалізує_кожен_вхід_і_зшиває()
+    {
+        var f = AssembleStep.BuildConcatFilter(n: 2, width: 1920, height: 1080, fps: 30);
+
+        // Кожен вхід масштабується+паддиться до 1920x1080, setsar=1, fps=30.
+        Assert.Contains("[0:v:0]scale=1920:1080:force_original_aspect_ratio=decrease", f);
+        Assert.Contains("pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=30[v0]", f);
+        Assert.Contains("[1:v:0]scale=1920:1080", f);
+        // Аудіо ресемплиться, потоки зшиваються concat'ом.
+        Assert.Contains("[0:a:0]aresample=async=1[a0]", f);
+        Assert.Contains("[v0][a0][v1][a1]concat=n=2:v=1:a=1[outv][outa]", f);
+    }
+
+    [Fact]
+    public void BuildConcatFilter_один_сегмент()
+    {
+        var f = AssembleStep.BuildConcatFilter(n: 1, width: 1280, height: 720, fps: 25);
+
+        Assert.Contains("[0:v:0]scale=1280:720", f);
+        Assert.Contains("[v0][a0]concat=n=1:v=1:a=1[outv][outa]", f);
+    }
+
     // --- DownloadSettings.BuildFormatSelector: селектор якості yt-dlp ---
 
     [Theory]

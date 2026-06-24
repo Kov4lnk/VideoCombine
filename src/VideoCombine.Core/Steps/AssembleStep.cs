@@ -94,12 +94,11 @@ public sealed class AssembleStep : IStep
                 $"ffmpeg concat-copy код {code} (можливо, сегменти різного формату — спробуйте режим 'encode')");
     }
 
-    /// <summary>Надійний шлях: concat filter із перекодуванням у єдиний формат.</summary>
+    /// <summary>Надійний шлях: нормалізація кожного входу + concat filter.</summary>
     private async Task ConcatEncodeAsync(
         IReadOnlyList<Segment> segments, PipelineContext context,
         string outputPath, IProgressReporter progress, CancellationToken token)
     {
-        // Кожен сегмент — окремий -i; filter_complex concat зшиває нормалізовані потоки.
         var args = new List<string>();
         foreach (var seg in segments)
         {
@@ -107,11 +106,10 @@ public sealed class AssembleStep : IStep
             args.Add(seg.FilePath);
         }
 
-        var n = segments.Count;
-        var inputs = new StringBuilder();
-        for (int i = 0; i < n; i++)
-            inputs.Append($"[{i}:v:0][{i}:a:0]");
-        var filter = $"{inputs}concat=n={n}:v=1:a=1[outv][outa]";
+        // Кожен вхід приводимо до спільного формату, ІНАКШЕ concat падає (код -22),
+        // коли сегменти різної роздільності/fps (напр. 1080p + 720p джерела).
+        var filter = BuildConcatFilter(
+            segments.Count, _settings.TargetWidth, _settings.TargetHeight, _settings.TargetFps);
 
         args.Add("-filter_complex");
         args.Add(filter);
@@ -135,6 +133,31 @@ public sealed class AssembleStep : IStep
         // ffmpeg сипле прогрес у stderr рядками "frame=... time=...".
         if (line.Contains("time=", StringComparison.OrdinalIgnoreCase))
             progress.ReportStepProgress(line.Trim(), 0.5);
+    }
+
+    /// <summary>
+    /// Будує filter_complex: нормалізує КОЖЕН вхід до спільного формату,
+    /// потім зшиває concat'ом. Винесено окремо й публічно — для тесту.
+    ///
+    /// Нормалізація відео на вхід i:
+    ///   scale (вписати у WxH, зберегти пропорції) → pad (letterbox до WxH,
+    ///   центрувати) → setsar=1 (квадратний піксель) → fps (єдина частота).
+    /// Без цього concat падає (код -22) на сегментах різної роздільності/fps.
+    /// Аудіо: aresample — щоб частоти дискретизації теж збіглися.
+    /// </summary>
+    public static string BuildConcatFilter(int n, int width, int height, int fps)
+    {
+        var sb = new StringBuilder();
+        for (int i = 0; i < n; i++)
+        {
+            sb.Append($"[{i}:v:0]scale={width}:{height}:force_original_aspect_ratio=decrease,")
+              .Append($"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps={fps}[v{i}];")
+              .Append($"[{i}:a:0]aresample=async=1[a{i}];");
+        }
+        for (int i = 0; i < n; i++)
+            sb.Append($"[v{i}][a{i}]");
+        sb.Append($"concat=n={n}:v=1:a=1[outv][outa]");
+        return sb.ToString();
     }
 
     /// <summary>
@@ -192,4 +215,11 @@ public sealed class AssembleSettings
     // Параметри перекодування (режим encode).
     public string EncodePreset { get; set; } = "medium";
     public int Crf { get; set; } = 20;
+
+    // Спільний формат, до якого нормалізуються сегменти перед склейкою
+    // (режим encode). Дефолт 1080p/30fps (розділ 7.5). Потрібно, бо concat
+    // вимагає однакових роздільності/SAR/fps у всіх входів — інакше код -22.
+    public int TargetWidth { get; set; } = 1920;
+    public int TargetHeight { get; set; } = 1080;
+    public int TargetFps { get; set; } = 30;
 }
