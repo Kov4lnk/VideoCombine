@@ -56,4 +56,18 @@ public sealed partial class BuilderViewModel : ObservableObject
         Order = AssembleOrder,
         VideoCodec = UseNvenc ? "nvenc" : "libx264"
     };
+
+    /// <summary>
+    /// Заливає налаштування в поля панелі (завантаження рецепта). Зворотне до
+    /// BuildCutSettings/BuildAssembleSettings. Прив'язки оновлять UI самі.
+    /// </summary>
+    public void Apply(CutSettings cut, AssembleSettings assemble)
+    {
+        CutMode = cut.Mode;
+        CutMinSec = cut.MinSec;
+        CutMaxSec = cut.MaxSec;
+
+        AssembleOrder = assemble.Order;
+        UseNvenc = assemble.VideoCodec.Equals("nvenc", StringComparison.OrdinalIgnoreCase);
+    }
 }

@@ -1,6 +1,7 @@
 namespace VideoCombine.Tests;
 
 using VideoCombine.Core.Recipes;
+using VideoCombine.Core.Steps;
 using Xunit;
 
 public sealed class RecipeStoreTests
@@ -33,5 +34,52 @@ public sealed class RecipeStoreTests
         Assert.Equal("cut", loaded.Steps[1].TypeId);
 
         Directory.Delete(dir, recursive: true);
+    }
+
+    [Fact]
+    public async Task RecipeMapper_кругообіг_через_файл_зберігає_значення()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "vc_test_" + Guid.NewGuid());
+        var store = new RecipeStore(dir);
+
+        // Збираємо рецепт із налаштувань...
+        var recipe = RecipeMapper.ToRecipe(
+            name: "Тест мапера",
+            quality: "1080p",
+            cut: new CutSettings { Mode = "fixed", MinSec = 4, MaxSec = 10 },
+            assemble: new AssembleSettings { Order = "random", VideoCodec = "nvenc" });
+
+        // ...і ганяємо через файл — тут значення стають JsonElement.
+        await store.SaveAsync(recipe);
+        var loaded = await store.LoadAsync(store.ListRecipeFiles().Single());
+        Assert.NotNull(loaded);
+
+        // Читання має витягти значення з JsonElement, а не впасти на дефолти.
+        Assert.Equal("1080p", RecipeMapper.ReadQuality(loaded!));
+
+        var cut = RecipeMapper.ReadCutSettings(loaded!);
+        Assert.Equal("fixed", cut.Mode);
+        Assert.Equal(4, cut.MinSec);
+        Assert.Equal(10, cut.MaxSec);
+
+        var asm = RecipeMapper.ReadAssembleSettings(loaded!);
+        Assert.Equal("random", asm.Order);
+        Assert.Equal("nvenc", asm.VideoCodec);
+
+        Directory.Delete(dir, recursive: true);
+    }
+
+    [Fact]
+    public void RecipeMapper_відсутні_ключі_дають_дефолти()
+    {
+        // Порожній рецепт (старий/урізаний) не повинен валити читання.
+        var empty = new Recipe { Name = "Порожній" };
+
+        Assert.Equal("720p", RecipeMapper.ReadQuality(empty));
+        var cut = RecipeMapper.ReadCutSettings(empty);
+        Assert.Equal(new CutSettings().Mode, cut.Mode);
+        Assert.Equal(new CutSettings().MinSec, cut.MinSec);
+        var asm = RecipeMapper.ReadAssembleSettings(empty);
+        Assert.Equal(new AssembleSettings().VideoCodec, asm.VideoCodec);
     }
 }

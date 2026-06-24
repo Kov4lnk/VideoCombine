@@ -67,6 +67,17 @@ public sealed partial class SourcesViewModel : ObservableObject
     public string GetQualityValue() =>
         Quality == "Найкраща" ? "best" : Quality;
 
+    /// <summary>
+    /// Зворотне до GetQualityValue: виставляє Quality з внутрішнього значення
+    /// рецепта ("best"→"Найкраща"). Невідоме значення лишає поточну якість.
+    /// </summary>
+    public void SetQualityFromValue(string value)
+    {
+        var display = value == "best" ? "Найкраща" : value;
+        if (QualityOptions.Contains(display))
+            Quality = display;
+    }
+
     // --- Валідація ---
 
     /// <summary>

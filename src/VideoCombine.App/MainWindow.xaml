@@ -69,65 +69,100 @@
                 </Grid>
             </TabItem>
             <TabItem Header="Конструктор">
-                <ScrollViewer VerticalScrollBarVisibility="Auto" DataContext="{Binding Builder}">
-                    <StackPanel Margin="16" MaxWidth="420" HorizontalAlignment="Left">
+                <DockPanel>
 
-                        <TextBlock Text="Налаштування кроків пайплайну. Завантаження й Аналіз поки без опцій; якість завантаження — на табі «Джерела»."
-                                   Foreground="Gray" TextWrapping="Wrap" Margin="0,0,0,12" />
+                    <!-- Тулбар рецептів згори (run-config патерн): вибір зі списку = завантажити,
+                         ім'я + Зберегти. Це керування всією конфігурацією, а не крок — тож окрема
+                         смужка над кроками, відділена рамкою знизу. DataContext — Recipes
+                         (сусід Builder на MainViewModel). -->
+                    <Border DockPanel.Dock="Top" Background="#F5F6F8"
+                            BorderBrush="#DDE0E4" BorderThickness="0,0,0,1" Padding="16,10"
+                            DataContext="{Binding DataContext.Recipes, RelativeSource={RelativeSource AncestorType=Window}}">
+                        <StackPanel>
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="💾 Рецепт:" VerticalAlignment="Center" FontWeight="SemiBold" Margin="0,0,8,0" />
+                                <ComboBox Width="180" VerticalAlignment="Center"
+                                          ItemsSource="{Binding Recipes}"
+                                          DisplayMemberPath="Name"
+                                          SelectedItem="{Binding SelectedRecipe}"
+                                          ToolTip="Обрати збережений рецепт — застосується одразу" />
 
-                        <!-- Нарізка (CutStep) -->
-                        <TextBlock Text="✂ Нарізка" FontWeight="SemiBold" FontSize="14" Margin="0,4,0,6" />
-                        <Grid Margin="8,0,0,0">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="110" />
-                                <ColumnDefinition Width="*" />
-                            </Grid.ColumnDefinitions>
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="Auto" />
-                            </Grid.RowDefinitions>
+                                <Rectangle Width="1" Margin="14,2" Fill="#DDE0E4" />
 
-                            <TextBlock Grid.Row="0" Grid.Column="0" Text="Режим:" VerticalAlignment="Center" Margin="0,3" />
-                            <ComboBox Grid.Row="0" Grid.Column="1" Margin="0,3" HorizontalAlignment="Left" Width="140"
-                                      ItemsSource="{Binding CutModeOptions}" SelectedItem="{Binding CutMode}" />
+                                <TextBox Width="160" VerticalAlignment="Center"
+                                         Text="{Binding RecipeName, UpdateSourceTrigger=PropertyChanged}"
+                                         ToolTip="Ім'я для збереження поточних налаштувань" />
+                                <Button Content="Зберегти" Width="90" Margin="8,0,0,0"
+                                        Command="{Binding SaveCommand}" />
 
-                            <TextBlock Grid.Row="1" Grid.Column="0" Text="Мін, сек:" VerticalAlignment="Center" Margin="0,3" />
-                            <TextBox Grid.Row="1" Grid.Column="1" Margin="0,3" HorizontalAlignment="Left" Width="60"
-                                     Text="{Binding CutMinSec, UpdateSourceTrigger=PropertyChanged}" />
+                                <TextBlock Text="{Binding Status}" Foreground="#0066CC"
+                                           VerticalAlignment="Center" Margin="14,0,0,0"
+                                           TextTrimming="CharacterEllipsis" MaxWidth="220" />
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
 
-                            <TextBlock Grid.Row="2" Grid.Column="0" Text="Макс, сек:" VerticalAlignment="Center" Margin="0,3" />
-                            <TextBox Grid.Row="2" Grid.Column="1" Margin="0,3" HorizontalAlignment="Left" Width="60"
-                                     Text="{Binding CutMaxSec, UpdateSourceTrigger=PropertyChanged}" />
-                        </Grid>
+                    <!-- Кроки пайплайну — головний вміст на всю ширину. DataContext — Builder. -->
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" DataContext="{Binding Builder}">
+                        <StackPanel Margin="16" MaxWidth="420" HorizontalAlignment="Left">
 
-                        <Separator Margin="0,14" />
+                            <TextBlock Text="Налаштування кроків пайплайну. Завантаження й Аналіз поки без опцій; якість завантаження — на табі «Джерела»."
+                                       Foreground="Gray" TextWrapping="Wrap" Margin="0,0,0,12" />
 
-                        <!-- Склейка (AssembleStep) -->
-                        <TextBlock Text="🎞 Склейка" FontWeight="SemiBold" FontSize="14" Margin="0,4,0,6" />
-                        <Grid Margin="8,0,0,0">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="110" />
-                                <ColumnDefinition Width="*" />
-                            </Grid.ColumnDefinitions>
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="Auto" />
-                            </Grid.RowDefinitions>
+                            <!-- Нарізка (CutStep) -->
+                            <TextBlock Text="✂ Нарізка" FontWeight="SemiBold" FontSize="14" Margin="0,4,0,6" />
+                            <Grid Margin="8,0,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="110" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
 
-                            <TextBlock Grid.Row="0" Grid.Column="0" Text="Порядок:" VerticalAlignment="Center" Margin="0,3" />
-                            <ComboBox Grid.Row="0" Grid.Column="1" Margin="0,3" HorizontalAlignment="Left" Width="140"
-                                      ItemsSource="{Binding AssembleOrderOptions}" SelectedItem="{Binding AssembleOrder}" />
+                                <TextBlock Grid.Row="0" Grid.Column="0" Text="Режим:" VerticalAlignment="Center" Margin="0,3" />
+                                <ComboBox Grid.Row="0" Grid.Column="1" Margin="0,3" HorizontalAlignment="Left" Width="140"
+                                          ItemsSource="{Binding CutModeOptions}" SelectedItem="{Binding CutMode}" />
 
-                            <CheckBox Grid.Row="1" Grid.Column="1" Margin="0,6,0,0"
-                                      IsChecked="{Binding UseNvenc}"
-                                      Content="Кодувати на GPU (NVENC)" />
-                        </Grid>
-                        <TextBlock Margin="8,4,0,0" Foreground="Gray" FontSize="11" TextWrapping="Wrap"
-                                   Text="NVENC ~3x швидше за CPU. Якщо GPU недоступний — автоматичний відкат на CPU (libx264)." />
+                                <TextBlock Grid.Row="1" Grid.Column="0" Text="Мін, сек:" VerticalAlignment="Center" Margin="0,3" />
+                                <TextBox Grid.Row="1" Grid.Column="1" Margin="0,3" HorizontalAlignment="Left" Width="60"
+                                         Text="{Binding CutMinSec, UpdateSourceTrigger=PropertyChanged}" />
 
-                    </StackPanel>
-                </ScrollViewer>
+                                <TextBlock Grid.Row="2" Grid.Column="0" Text="Макс, сек:" VerticalAlignment="Center" Margin="0,3" />
+                                <TextBox Grid.Row="2" Grid.Column="1" Margin="0,3" HorizontalAlignment="Left" Width="60"
+                                         Text="{Binding CutMaxSec, UpdateSourceTrigger=PropertyChanged}" />
+                            </Grid>
+
+                            <Separator Margin="0,14" />
+
+                            <!-- Склейка (AssembleStep) -->
+                            <TextBlock Text="🎞 Склейка" FontWeight="SemiBold" FontSize="14" Margin="0,4,0,6" />
+                            <Grid Margin="8,0,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="110" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+
+                                <TextBlock Grid.Row="0" Grid.Column="0" Text="Порядок:" VerticalAlignment="Center" Margin="0,3" />
+                                <ComboBox Grid.Row="0" Grid.Column="1" Margin="0,3" HorizontalAlignment="Left" Width="140"
+                                          ItemsSource="{Binding AssembleOrderOptions}" SelectedItem="{Binding AssembleOrder}" />
+
+                                <CheckBox Grid.Row="1" Grid.Column="1" Margin="0,6,0,0"
+                                          IsChecked="{Binding UseNvenc}"
+                                          Content="Кодувати на GPU (NVENC)" />
+                            </Grid>
+                            <TextBlock Margin="8,4,0,0" Foreground="Gray" FontSize="11" TextWrapping="Wrap"
+                                       Text="NVENC ~3x швидше за CPU. Якщо GPU недоступний — автоматичний відкат на CPU (libx264)." />
+
+                        </StackPanel>
+                    </ScrollViewer>
+                </DockPanel>
             </TabItem>
             <TabItem Header="Виконання">
                 <Grid Margin="12" DataContext="{Binding Execution}">

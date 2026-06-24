@@ -1,0 +1,113 @@
+namespace VideoCombine.Core.Recipes;
+
+using System.Text.Json;
+using VideoCombine.Core.Steps;
+
+/// <summary>
+/// Перетворює налаштування кроків ↔ Recipe (розділ 5). Окремо від App, бо
+/// оперує лише Core-типами (CutSettings/AssembleSettings) — тож тестується юнітами.
+///
+/// ПІДВОДНИЙ КАМІНЬ, заради якого це винесено й покрито тестом: після кругообігу
+/// через JSON значення в RecipeStep.Settings вертаються як JsonElement, а не як
+/// int/string (бо словник — object?). Тому читання значень мусить розуміти ОБИДВА
+/// випадки: щойно зібраний у пам'яті рецепт (raw int/string) і завантажений із
+/// файлу (JsonElement). Звідси хелпери ReadString/ReadDouble.
+/// </summary>
+public static class RecipeMapper
+{
+    // TypeId кроків — мають збігатися з IStep.TypeId відповідних кроків.
+    private const string Download = "download";
+    private const string Cut = "cut";
+    private const string Assemble = "assemble";
+
+    /// <summary>
+    /// Збирає рецепт із поточних налаштувань. Кроки Завантаження/Аналіз/Нарізка/
+    /// Склейка — фіксований ланцюг відеогілки (Аналіз без налаштувань, тож порожній).
+    /// </summary>
+    public static Recipe ToRecipe(string name, string quality, CutSettings cut, AssembleSettings assemble) => new()
+    {
+        Name = name,
+        StartBranch = "video",
+        Steps =
+        {
+            new RecipeStep { TypeId = Download, Settings = { ["quality"] = quality } },
+            new RecipeStep { TypeId = "analyze" },
+            new RecipeStep
+            {
+                TypeId = Cut,
+                Settings =
+                {
+                    ["mode"] = cut.Mode,
+                    ["minSec"] = cut.MinSec,
+                    ["maxSec"] = cut.MaxSec
+                }
+            },
+            new RecipeStep
+            {
+                TypeId = Assemble,
+                Settings =
+                {
+                    ["order"] = assemble.Order,
+                    ["videoCodec"] = assemble.VideoCodec
+                }
+            }
+        }
+    };
+
+    /// <summary>Якість завантаження з рецепта (дефолт "720p", якщо кроку/ключа нема).</summary>
+    public static string ReadQuality(Recipe recipe) =>
+        ReadString(FindStep(recipe, Download)?.Settings, "quality", "720p");
+
+    /// <summary>Налаштування нарізки з рецепта; відсутні ключі → дефолти CutSettings.</summary>
+    public static CutSettings ReadCutSettings(Recipe recipe)
+    {
+        var s = FindStep(recipe, Cut)?.Settings;
+        var def = new CutSettings();
+        return new CutSettings
+        {
+            Mode = ReadString(s, "mode", def.Mode),
+            MinSec = ReadDouble(s, "minSec", def.MinSec),
+            MaxSec = ReadDouble(s, "maxSec", def.MaxSec)
+        };
+    }
+
+    /// <summary>Налаштування склейки з рецепта; відсутні ключі → дефолти AssembleSettings.</summary>
+    public static AssembleSettings ReadAssembleSettings(Recipe recipe)
+    {
+        var s = FindStep(recipe, Assemble)?.Settings;
+        var def = new AssembleSettings();
+        return new AssembleSettings
+        {
+            Mode = "encode",
+            Order = ReadString(s, "order", def.Order),
+            VideoCodec = ReadString(s, "videoCodec", def.VideoCodec)
+        };
+    }
+
+    // --- Стійке читання значень (raw або JsonElement) ---
+
+    private static RecipeStep? FindStep(Recipe recipe, string typeId) =>
+        recipe.Steps.FirstOrDefault(st => st.TypeId == typeId);
+
+    private static string ReadString(IReadOnlyDictionary<string, object?>? settings, string key, string fallback)
+    {
+        if (settings is null || !settings.TryGetValue(key, out var v) || v is null) return fallback;
+        if (v is JsonElement je)
+            return je.ValueKind == JsonValueKind.String ? je.GetString() ?? fallback : fallback;
+        return v.ToString() ?? fallback;
+    }
+
+    private static double ReadDouble(IReadOnlyDictionary<string, object?>? settings, string key, double fallback)
+    {
+        if (settings is null || !settings.TryGetValue(key, out var v) || v is null) return fallback;
+        if (v is JsonElement je)
+            return je.ValueKind == JsonValueKind.Number && je.TryGetDouble(out var d) ? d : fallback;
+        return v switch
+        {
+            double dd => dd,
+            int ii => ii,
+            long ll => ll,
+            _ => double.TryParse(v.ToString(), out var p) ? p : fallback
+        };
+    }
+}
