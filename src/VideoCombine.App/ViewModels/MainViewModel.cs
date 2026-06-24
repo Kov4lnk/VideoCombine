@@ -10,6 +10,7 @@ public sealed class MainViewModel
     public SourcesViewModel Sources { get; }
     public BuilderViewModel Builder { get; }
     public RecipesViewModel Recipes { get; }
+    public SettingsViewModel Settings { get; }
     public ExecutionViewModel Execution { get; }
 
     public MainViewModel()
@@ -17,6 +18,7 @@ public sealed class MainViewModel
         Sources = new SourcesViewModel();
         Builder = new BuilderViewModel();
         Recipes = new RecipesViewModel(Sources, Builder);
-        Execution = new ExecutionViewModel(Sources, Builder);
+        Settings = new SettingsViewModel();
+        Execution = new ExecutionViewModel(Sources, Builder, Settings);
     }
 }

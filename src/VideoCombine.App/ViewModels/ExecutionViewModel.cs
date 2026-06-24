@@ -26,11 +26,13 @@ public sealed partial class ExecutionViewModel : ObservableObject, IPipelineProg
 {
     private readonly SourcesViewModel _sources;
     private readonly BuilderViewModel _builder;
+    private readonly SettingsViewModel _settings;
 
-    public ExecutionViewModel(SourcesViewModel sources, BuilderViewModel builder)
+    public ExecutionViewModel(SourcesViewModel sources, BuilderViewModel builder, SettingsViewModel settings)
     {
         _sources = sources;
         _builder = builder;
+        _settings = settings;
         // Старт залежить від наявності валідних джерел — оновлюємо, коли список змінюється.
         _sources.Sources.CollectionChanged += (_, _) => StartCommand.NotifyCanExecuteChanged();
     }
@@ -75,7 +77,7 @@ public sealed partial class ExecutionViewModel : ObservableObject, IPipelineProg
         _cts = new CancellationTokenSource();
         StartTimer();
 
-        var settings = BuildSettings();
+        var settings = _settings.ToAppSettings();
         var runner = new ProcessRunner();
 
         var steps = new List<IStep>
@@ -234,33 +236,4 @@ public sealed partial class ExecutionViewModel : ObservableObject, IPipelineProg
     }
 
     partial void OnFinalOutputPathChanged(string? value) => OpenResultCommand.NotifyCanExecuteChanged();
-
-    /// <summary>Тимчасові налаштування (Фаза C винесе їх у таб «Налаштування»).</summary>
-    private static AppSettings BuildSettings()
-    {
-        string Env(string key, string fallback) =>
-            Environment.GetEnvironmentVariable(key) is { Length: > 0 } v ? v : fallback;
-
-        var repoRoot = FindRepoRoot();
-        return new AppSettings
-        {
-            FfmpegPath = Env("VC_FFMPEG", @"C:\ffmpeg\bin\ffmpeg.exe"),
-            FfprobePath = Env("VC_FFPROBE", @"C:\ffmpeg\bin\ffprobe.exe"),
-            YtDlpPath = Env("VC_YTDLP", Path.Combine(repoRoot, "tools", "yt-dlp.exe")),
-            WorkingRoot = Env("VC_WORK", Path.Combine(repoRoot, "work")),
-            OutputRoot = Env("VC_OUTPUT", Path.Combine(repoRoot, "output")),
-        };
-    }
-
-    private static string FindRepoRoot()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null)
-        {
-            if (File.Exists(Path.Combine(dir.FullName, "VideoCombine.sln")))
-                return dir.FullName;
-            dir = dir.Parent;
-        }
-        return Directory.GetCurrentDirectory();
-    }
 }

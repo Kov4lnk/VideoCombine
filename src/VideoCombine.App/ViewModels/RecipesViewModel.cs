@@ -4,6 +4,7 @@ using System.Collections.ObjectModel;
 using System.IO;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using VideoCombine.Core.Models;
 using VideoCombine.Core.Recipes;
 
 /// <summary>
@@ -22,7 +23,7 @@ public sealed partial class RecipesViewModel : ObservableObject
     {
         _sources = sources;
         _builder = builder;
-        _store = new RecipeStore(GetRecipesFolder());
+        _store = new RecipeStore(ProjectPaths.RecipesDir);
         RefreshList();
     }
 
@@ -105,23 +106,6 @@ public sealed partial class RecipesViewModel : ObservableObject
     partial void OnSelectedRecipeChanged(RecipeFile? value)
     {
         if (value is not null) _ = LoadAsync(value);
-    }
-
-    /// <summary>
-    /// Папка рецептів — recipes/ поряд із work/output. ПРИМІТКА: пошук кореня
-    /// репо тут дублює ExecutionViewModel і ConsoleRunner — це борг, який прибере
-    /// слайс «Налаштування» (єдине джерело шляхів).
-    /// </summary>
-    private static string GetRecipesFolder()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null)
-        {
-            if (File.Exists(Path.Combine(dir.FullName, "VideoCombine.sln")))
-                return Path.Combine(dir.FullName, "recipes");
-            dir = dir.Parent;
-        }
-        return Path.Combine(Directory.GetCurrentDirectory(), "recipes");
     }
 }
 

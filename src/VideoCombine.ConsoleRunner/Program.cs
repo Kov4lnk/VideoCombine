@@ -21,7 +21,7 @@ if (args.Length == 0)
     return 1;
 }
 
-var settings = BuildSettings();
+var settings = new SettingsStore().LoadOrDefault();
 
 Console.WriteLine("=== VideoCombine — наскрізний прогон ===");
 Console.WriteLine($"ffmpeg : {settings.FfmpegPath}");
@@ -92,37 +92,6 @@ catch (Exception ex)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-
-static AppSettings BuildSettings()
-{
-    string Env(string key, string fallback) =>
-        Environment.GetEnvironmentVariable(key) is { Length: > 0 } v ? v : fallback;
-
-    var repoRoot = FindRepoRoot();
-
-    return new AppSettings
-    {
-        FfmpegPath  = Env("VC_FFMPEG",  @"C:\ffmpeg\bin\ffmpeg.exe"),
-        FfprobePath = Env("VC_FFPROBE", @"C:\ffmpeg\bin\ffprobe.exe"),
-        YtDlpPath   = Env("VC_YTDLP",   Path.Combine(repoRoot, "tools", "yt-dlp.exe")),
-        WorkingRoot = Env("VC_WORK",    Path.Combine(repoRoot, "work")),
-        OutputRoot  = Env("VC_OUTPUT",  Path.Combine(repoRoot, "output")),
-    };
-}
-
-// Шукає корінь репо вгору по дереву (де лежить .gitignore / .sln),
-// щоб tools/work/output були поряд із проектом, а не в bin/.
-static string FindRepoRoot()
-{
-    var dir = new DirectoryInfo(AppContext.BaseDirectory);
-    while (dir is not null)
-    {
-        if (File.Exists(Path.Combine(dir.FullName, "VideoCombine.sln")))
-            return dir.FullName;
-        dir = dir.Parent;
-    }
-    return Directory.GetCurrentDirectory();
-}
 
 static bool CheckTools(AppSettings s)
 {

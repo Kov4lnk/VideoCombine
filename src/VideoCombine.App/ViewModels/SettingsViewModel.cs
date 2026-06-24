@@ -1,0 +1,123 @@
+namespace VideoCombine.App.ViewModels;
+
+using System.IO;
+using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
+using Microsoft.Win32;
+using VideoCombine.Core.Models;
+
+/// <summary>
+/// Логіка таба «Налаштування» (розділ 4.3): шляхи до зовнішніх інструментів і
+/// папки work/output. Раніше шляхи були захардкоджені у двох BuildSettings —
+/// тепер єдине джерело через SettingsStore. Виконання читає збережене звідси.
+///
+/// Ліміти одночасності й LLM-провайдер поки лише показуємо як довідку (редагування
+/// додамо, коли болітиме). API-ключі тут не живуть — окрема захищена тема.
+/// </summary>
+public sealed partial class SettingsViewModel : ObservableObject
+{
+    private readonly SettingsStore _store;
+    private readonly AppSettings _settings;
+
+    public SettingsViewModel()
+    {
+        _store = new SettingsStore();
+        _settings = _store.LoadOrDefault();
+
+        // Розкладаємо у поля для прив'язки.
+        _ffmpegPath = _settings.FfmpegPath;
+        _ffprobePath = _settings.FfprobePath;
+        _ytDlpPath = _settings.YtDlpPath;
+        _workingRoot = _settings.WorkingRoot;
+        _outputRoot = _settings.OutputRoot;
+    }
+
+    [ObservableProperty] private string _ffmpegPath;
+    [ObservableProperty] private string _ffprobePath;
+    [ObservableProperty] private string _ytDlpPath;
+    [ObservableProperty] private string _workingRoot;
+    [ObservableProperty] private string _outputRoot;
+
+    /// <summary>Короткий статус останньої дії.</summary>
+    [ObservableProperty] private string _status = "";
+
+    [RelayCommand]
+    private void Save()
+    {
+        try
+        {
+            _settings.FfmpegPath = FfmpegPath.Trim();
+            _settings.FfprobePath = FfprobePath.Trim();
+            _settings.YtDlpPath = YtDlpPath.Trim();
+            _settings.WorkingRoot = WorkingRoot.Trim();
+            _settings.OutputRoot = OutputRoot.Trim();
+
+            _store.Save(_settings);
+            Status = "Збережено. Застосується при наступному прогоні.";
+        }
+        catch (Exception ex)
+        {
+            Status = $"Помилка збереження: {ex.Message}";
+        }
+    }
+
+    // --- Огляд (нативні діалоги вибору файлу/папки) ---
+    // Діалоги — App-рівень; SettingsViewModel теж у App, тож правило "Core не знає
+    // App" не порушується. По команді на поле — біндинг чистіший за параметризовану.
+
+    [RelayCommand]
+    private void BrowseFfmpeg() => FfmpegPath = PickExe("Виберіть ffmpeg.exe", FfmpegPath) ?? FfmpegPath;
+
+    [RelayCommand]
+    private void BrowseFfprobe() => FfprobePath = PickExe("Виберіть ffprobe.exe", FfprobePath) ?? FfprobePath;
+
+    [RelayCommand]
+    private void BrowseYtDlp() => YtDlpPath = PickExe("Виберіть yt-dlp.exe", YtDlpPath) ?? YtDlpPath;
+
+    [RelayCommand]
+    private void BrowseWorking() => WorkingRoot = PickFolder("Виберіть робочу папку", WorkingRoot) ?? WorkingRoot;
+
+    [RelayCommand]
+    private void BrowseOutput() => OutputRoot = PickFolder("Виберіть папку виводу", OutputRoot) ?? OutputRoot;
+
+    /// <summary>Діалог вибору .exe. Стартує з теки поточного значення, якщо є.</summary>
+    private static string? PickExe(string title, string current)
+    {
+        var dlg = new OpenFileDialog
+        {
+            Title = title,
+            Filter = "Програми (*.exe)|*.exe|Усі файли (*.*)|*.*",
+            CheckFileExists = true
+        };
+        SetInitialDir(d => dlg.InitialDirectory = d, current, isFile: true);
+        return dlg.ShowDialog() == true ? dlg.FileName : null;
+    }
+
+    /// <summary>Діалог вибору папки (OpenFolderDialog — .NET 8+, без WinForms).</summary>
+    private static string? PickFolder(string title, string current)
+    {
+        var dlg = new OpenFolderDialog { Title = title };
+        SetInitialDir(d => dlg.InitialDirectory = d, current, isFile: false);
+        return dlg.ShowDialog() == true ? dlg.FolderName : null;
+    }
+
+    /// <summary>Стартова тека діалогу з поточного значення, якщо воно існує.</summary>
+    private static void SetInitialDir(Action<string> set, string current, bool isFile)
+    {
+        if (string.IsNullOrWhiteSpace(current)) return;
+        var dir = isFile ? Path.GetDirectoryName(current) : current;
+        if (!string.IsNullOrEmpty(dir) && Directory.Exists(dir))
+            set(dir);
+    }
+
+    /// <summary>Поточні налаштування для побудови пайплайну (читає Виконання).</summary>
+    public AppSettings ToAppSettings()
+    {
+        _settings.FfmpegPath = FfmpegPath.Trim();
+        _settings.FfprobePath = FfprobePath.Trim();
+        _settings.YtDlpPath = YtDlpPath.Trim();
+        _settings.WorkingRoot = WorkingRoot.Trim();
+        _settings.OutputRoot = OutputRoot.Trim();
+        return _settings;
+    }
+}
