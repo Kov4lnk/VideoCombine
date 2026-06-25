@@ -95,24 +95,12 @@ catch (Exception ex)
 
 static bool CheckTools(AppSettings s)
 {
-    bool ok = true;
-    void Need(string name, string path, bool onPathOk)
-    {
-        // Шлях без роздільника (напр. "ffmpeg") вважаємо «шукати в PATH» — пропускаємо перевірку файлу.
-        var isBareName = !path.Contains(Path.DirectorySeparatorChar) && !path.Contains('/');
-        if (isBareName && onPathOk) return;
-        if (!File.Exists(path))
-        {
-            Console.WriteLine($"✕ Не знайдено {name}: {path}");
-            ok = false;
-        }
-    }
-    Need("ffmpeg",  s.FfmpegPath,  onPathOk: true);
-    Need("ffprobe", s.FfprobePath, onPathOk: true);
-    Need("yt-dlp",  s.YtDlpPath,   onPathOk: true);
-    if (!ok)
-        Console.WriteLine("Виправ шляхи (або змінні VC_FFMPEG / VC_FFPROBE / VC_YTDLP) і повтори.");
-    return ok;
+    var missing = ToolChecker.MissingTools(s);
+    if (missing.Count == 0) return true;
+
+    foreach (var m in missing) Console.WriteLine($"✕ {m}");
+    Console.WriteLine("Виправ шляхи (або змінні VC_FFMPEG / VC_FFPROBE / VC_YTDLP) і повтори.");
+    return false;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

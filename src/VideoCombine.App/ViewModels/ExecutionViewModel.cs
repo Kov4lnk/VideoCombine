@@ -78,6 +78,21 @@ public sealed partial class ExecutionViewModel : ObservableObject, IPipelineProg
         StartTimer();
 
         var settings = _settings.ToAppSettings();
+
+        // Передпольотна перевірка інструментів (розділ 9): краще чіткий лог тут,
+        // ніж падіння посеред пайплайну. Шляхи редагуються в табі «Налаштування».
+        var missing = ToolChecker.MissingTools(settings);
+        if (missing.Count > 0)
+        {
+            foreach (var m in missing) AppendLog(LogLevel.Error, m);
+            AppendLog(LogLevel.Error, "Виправте шляхи на табі «Налаштування» і повторіть.");
+            StopTimer();
+            IsRunning = false;
+            _cts?.Dispose();
+            _cts = null;
+            return;
+        }
+
         var runner = new ProcessRunner();
 
         var steps = new List<IStep>

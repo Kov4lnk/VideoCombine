@@ -1,6 +1,7 @@
 namespace VideoCombine.App.ViewModels;
 
 using System.IO;
+using System.Windows.Media;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Win32;
@@ -40,6 +41,72 @@ public sealed partial class SettingsViewModel : ObservableObject
 
     /// <summary>Короткий статус останньої дії.</summary>
     [ObservableProperty] private string _status = "";
+
+    // --- Жива валідація полів (оновлюється при наборі) ---
+    // Для exe: ✓ якщо файл існує або голе ім'я в PATH, ✕ якщо не знайдено.
+    // Для папок: ✓ якщо існує, інакше нейтральне «буде створено» (не помилка —
+    // застосунок створює work/output сам перед прогоном).
+
+    public string FfmpegStatus => ToolStatus(FfmpegPath);
+    public Brush FfmpegStatusColor => ToolColor(FfmpegPath);
+    public string FfprobeStatus => ToolStatus(FfprobePath);
+    public Brush FfprobeStatusColor => ToolColor(FfprobePath);
+    public string YtDlpStatus => ToolStatus(YtDlpPath);
+    public Brush YtDlpStatusColor => ToolColor(YtDlpPath);
+
+    public string WorkingStatus => FolderStatus(WorkingRoot);
+    public Brush WorkingStatusColor => FolderColor(WorkingRoot);
+    public string OutputStatus => FolderStatus(OutputRoot);
+    public Brush OutputStatusColor => FolderColor(OutputRoot);
+
+    private static string ToolStatus(string path) =>
+        string.IsNullOrWhiteSpace(path) ? "✕ не вказано"
+        : ToolChecker.ToolPresent(path) ? "✓ знайдено"
+        : "✕ не знайдено";
+
+    private static Brush ToolColor(string path) =>
+        ToolChecker.ToolPresent(path) ? Brushes.SeaGreen : Brushes.Firebrick;
+
+    private static string FolderStatus(string path) =>
+        string.IsNullOrWhiteSpace(path) ? "✕ не вказано"
+        : Directory.Exists(path) ? "✓ існує"
+        : "буде створено";
+
+    private static Brush FolderColor(string path) =>
+        string.IsNullOrWhiteSpace(path) ? Brushes.Firebrick
+        : Directory.Exists(path) ? Brushes.SeaGreen
+        : Brushes.Gray;
+
+    // Поле шляху змінилось → оновити його статус-значок (генеровані OnXxxChanged).
+    partial void OnFfmpegPathChanged(string value)
+    {
+        OnPropertyChanged(nameof(FfmpegStatus));
+        OnPropertyChanged(nameof(FfmpegStatusColor));
+    }
+
+    partial void OnFfprobePathChanged(string value)
+    {
+        OnPropertyChanged(nameof(FfprobeStatus));
+        OnPropertyChanged(nameof(FfprobeStatusColor));
+    }
+
+    partial void OnYtDlpPathChanged(string value)
+    {
+        OnPropertyChanged(nameof(YtDlpStatus));
+        OnPropertyChanged(nameof(YtDlpStatusColor));
+    }
+
+    partial void OnWorkingRootChanged(string value)
+    {
+        OnPropertyChanged(nameof(WorkingStatus));
+        OnPropertyChanged(nameof(WorkingStatusColor));
+    }
+
+    partial void OnOutputRootChanged(string value)
+    {
+        OnPropertyChanged(nameof(OutputStatus));
+        OnPropertyChanged(nameof(OutputStatusColor));
+    }
 
     [RelayCommand]
     private void Save()

@@ -244,6 +244,7 @@
                                 <ColumnDefinition Width="90" />
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto" />
@@ -256,18 +257,24 @@
                                      Text="{Binding FfmpegPath, UpdateSourceTrigger=PropertyChanged}" />
                             <Button Grid.Row="0" Grid.Column="2" Content="Огляд…" Width="70" Margin="6,3,0,3"
                                     Command="{Binding BrowseFfmpegCommand}" />
+                            <TextBlock Grid.Row="0" Grid.Column="3" Text="{Binding FfmpegStatus}" Foreground="{Binding FfmpegStatusColor}"
+                                       VerticalAlignment="Center" Margin="8,3,0,3" />
 
                             <TextBlock Grid.Row="1" Grid.Column="0" Text="ffprobe:" VerticalAlignment="Center" Margin="0,3" />
                             <TextBox Grid.Row="1" Grid.Column="1" Margin="0,3"
                                      Text="{Binding FfprobePath, UpdateSourceTrigger=PropertyChanged}" />
                             <Button Grid.Row="1" Grid.Column="2" Content="Огляд…" Width="70" Margin="6,3,0,3"
                                     Command="{Binding BrowseFfprobeCommand}" />
+                            <TextBlock Grid.Row="1" Grid.Column="3" Text="{Binding FfprobeStatus}" Foreground="{Binding FfprobeStatusColor}"
+                                       VerticalAlignment="Center" Margin="8,3,0,3" />
 
                             <TextBlock Grid.Row="2" Grid.Column="0" Text="yt-dlp:" VerticalAlignment="Center" Margin="0,3" />
                             <TextBox Grid.Row="2" Grid.Column="1" Margin="0,3"
                                      Text="{Binding YtDlpPath, UpdateSourceTrigger=PropertyChanged}" />
                             <Button Grid.Row="2" Grid.Column="2" Content="Огляд…" Width="70" Margin="6,3,0,3"
                                     Command="{Binding BrowseYtDlpCommand}" />
+                            <TextBlock Grid.Row="2" Grid.Column="3" Text="{Binding YtDlpStatus}" Foreground="{Binding YtDlpStatusColor}"
+                                       VerticalAlignment="Center" Margin="8,3,0,3" />
                         </Grid>
 
                         <Separator Margin="0,14" />
@@ -278,6 +285,7 @@
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="90" />
                                 <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
                             <Grid.RowDefinitions>
@@ -290,12 +298,16 @@
                                      Text="{Binding WorkingRoot, UpdateSourceTrigger=PropertyChanged}" />
                             <Button Grid.Row="0" Grid.Column="2" Content="Огляд…" Width="70" Margin="6,3,0,3"
                                     Command="{Binding BrowseWorkingCommand}" />
+                            <TextBlock Grid.Row="0" Grid.Column="3" Text="{Binding WorkingStatus}" Foreground="{Binding WorkingStatusColor}"
+                                       VerticalAlignment="Center" Margin="8,3,0,3" />
 
                             <TextBlock Grid.Row="1" Grid.Column="0" Text="Вивід:" VerticalAlignment="Center" Margin="0,3" />
                             <TextBox Grid.Row="1" Grid.Column="1" Margin="0,3"
                                      Text="{Binding OutputRoot, UpdateSourceTrigger=PropertyChanged}" />
                             <Button Grid.Row="1" Grid.Column="2" Content="Огляд…" Width="70" Margin="6,3,0,3"
                                     Command="{Binding BrowseOutputCommand}" />
+                            <TextBlock Grid.Row="1" Grid.Column="3" Text="{Binding OutputStatus}" Foreground="{Binding OutputStatusColor}"
+                                       VerticalAlignment="Center" Margin="8,3,0,3" />
                         </Grid>
 
                         <StackPanel Orientation="Horizontal" Margin="8,16,0,0">
