@@ -3,6 +3,7 @@ namespace VideoCombine.Tests;
 using VideoCombine.Core.External;
 using VideoCombine.Core.Models;
 using VideoCombine.Core.Pipeline;
+using VideoCombine.Core.Recipes;
 using VideoCombine.Core.Steps;
 using Xunit;
 
@@ -145,23 +146,25 @@ public sealed class StepLogicTests
         Assert.Contains("[v0][a0]concat=n=1:v=1:a=1[outv][outa]", f);
     }
 
-    // --- AssembleStep.BuildVideoCodecArgs: CPU/GPU гілки кодека ---
+    // --- AssembleStep.BuildVideoCodecArgs: CPU/GPU × quality/bitrate ---
 
     [Fact]
-    public void BuildVideoCodecArgs_libx264_дає_crf_і_пресет()
+    public void BuildVideoCodecArgs_libx264_quality_дає_crf_і_пресет()
     {
         var a = AssembleStep.BuildVideoCodecArgs(
-            codec: "libx264", x264Preset: "medium", crf: 20, nvencPreset: "p5", nvencCq: 23);
+            codec: "libx264", x264Preset: "medium", crf: 20, nvencPreset: "p5", nvencCq: 23,
+            rateMode: "quality", bitrateK: 6000);
 
         Assert.Equal(
             new[] { "-c:v", "libx264", "-preset", "medium", "-crf", "20" }, a);
     }
 
     [Fact]
-    public void BuildVideoCodecArgs_nvenc_дає_cq_без_crf()
+    public void BuildVideoCodecArgs_nvenc_quality_дає_cq_без_crf()
     {
         var a = AssembleStep.BuildVideoCodecArgs(
-            codec: "nvenc", x264Preset: "medium", crf: 20, nvencPreset: "p5", nvencCq: 23);
+            codec: "nvenc", x264Preset: "medium", crf: 20, nvencPreset: "p5", nvencCq: 23,
+            rateMode: "quality", bitrateK: 6000);
 
         Assert.Equal(
             new[] { "-c:v", "h264_nvenc", "-preset", "p5", "-rc", "vbr", "-cq", "23", "-b:v", "0" }, a);
@@ -172,11 +175,38 @@ public sealed class StepLogicTests
     }
 
     [Fact]
+    public void BuildVideoCodecArgs_libx264_bitrate_дає_bv_без_crf()
+    {
+        var a = AssembleStep.BuildVideoCodecArgs(
+            codec: "libx264", x264Preset: "fast", crf: 20, nvencPreset: "p5", nvencCq: 23,
+            rateMode: "bitrate", bitrateK: 8000);
+
+        Assert.Equal(
+            new[] { "-c:v", "libx264", "-preset", "fast", "-b:v", "8000k" }, a);
+        // У режимі бітрейту якість через -crf не задаємо.
+        Assert.DoesNotContain("-crf", a);
+    }
+
+    [Fact]
+    public void BuildVideoCodecArgs_nvenc_bitrate_дає_bv_без_cq()
+    {
+        var a = AssembleStep.BuildVideoCodecArgs(
+            codec: "nvenc", x264Preset: "medium", crf: 20, nvencPreset: "p4", nvencCq: 23,
+            rateMode: "bitrate", bitrateK: 12000);
+
+        Assert.Equal(
+            new[] { "-c:v", "h264_nvenc", "-preset", "p4", "-rc", "vbr", "-b:v", "12000k" }, a);
+        // -cq у режимі бітрейту відсутній (інакше vbr тяжіє до якості, не розміру).
+        Assert.DoesNotContain("-cq", a);
+    }
+
+    [Fact]
     public void BuildVideoCodecArgs_невідомий_кодек_відкочується_на_libx264()
     {
         // Будь-що, крім "nvenc", трактуємо як CPU-шлях (безпечний дефолт).
         var a = AssembleStep.BuildVideoCodecArgs(
-            codec: "щось_дивне", x264Preset: "slow", crf: 18, nvencPreset: "p7", nvencCq: 19);
+            codec: "щось_дивне", x264Preset: "slow", crf: 18, nvencPreset: "p7", nvencCq: 19,
+            rateMode: "quality", bitrateK: 6000);
 
         Assert.Equal(
             new[] { "-c:v", "libx264", "-preset", "slow", "-crf", "18" }, a);
@@ -231,6 +261,70 @@ public sealed class StepLogicTests
         var blocking = step.GetRequirements(ctx).Where(r => r.IsBlocking).ToList();
 
         Assert.Single(blocking);
+    }
+
+    // --- RecipeMapper: round-trip опцій експорту через JSON (JsonElement-пастка) ---
+
+    [Fact]
+    public void RecipeMapper_round_trip_зберігає_опції_експорту()
+    {
+        // Нетипові значення в режимі бітрейту + контейнер mkv + GPU-кодек.
+        var assemble = new AssembleSettings
+        {
+            Order = "random",
+            VideoCodec = "nvenc",
+            RateMode = "bitrate",
+            Crf = 17,
+            NvencCq = 21,
+            EncodePreset = "slow",
+            NvencPreset = "p6",
+            VideoBitrateK = 9000,
+            OutputFileName = "output.mkv"
+        };
+        var cut = new CutSettings { Mode = "fixed", MinSec = 2, MaxSec = 5 };
+
+        var recipe = RecipeMapper.ToRecipe("test", "720p", cut, assemble);
+
+        // Кругообіг через JSON тими самими опціями, що й RecipeStore — після нього
+        // значення в Settings вертаються як JsonElement, а не raw int/string.
+        var opts = new System.Text.Json.JsonSerializerOptions
+        {
+            PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase
+        };
+        var json = System.Text.Json.JsonSerializer.Serialize(recipe, opts);
+        var loaded = System.Text.Json.JsonSerializer.Deserialize<Recipe>(json, opts)!;
+
+        var r = RecipeMapper.ReadAssembleSettings(loaded);
+
+        Assert.Equal("random", r.Order);
+        Assert.Equal("nvenc", r.VideoCodec);
+        Assert.Equal("bitrate", r.RateMode);
+        Assert.Equal(17, r.Crf);
+        Assert.Equal(21, r.NvencCq);
+        Assert.Equal("slow", r.EncodePreset);
+        Assert.Equal("p6", r.NvencPreset);
+        Assert.Equal(9000, r.VideoBitrateK);
+        Assert.Equal("output.mkv", r.OutputFileName);
+        Assert.Equal("720p", RecipeMapper.ReadQuality(loaded));
+    }
+
+    [Fact]
+    public void RecipeMapper_відсутні_ключі_дають_дефолти()
+    {
+        // Старий рецепт без нових ключів (лише order/videoCodec) → дефолти AssembleSettings.
+        var recipe = new Recipe
+        {
+            Name = "legacy",
+            Steps = { new RecipeStep { TypeId = "assemble", Settings = { ["order"] = "sequential" } } }
+        };
+        var def = new AssembleSettings();
+
+        var r = RecipeMapper.ReadAssembleSettings(recipe);
+
+        Assert.Equal(def.RateMode, r.RateMode);
+        Assert.Equal(def.Crf, r.Crf);
+        Assert.Equal(def.VideoBitrateK, r.VideoBitrateK);
+        Assert.Equal("output.mp4", r.OutputFileName);
     }
 
     private static PipelineContext MakeContext(string ytDlpPath) => new()

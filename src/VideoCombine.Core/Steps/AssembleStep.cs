@@ -129,7 +129,8 @@ public sealed class AssembleStep : IStep
         args.Add("-map"); args.Add("[outv]");
         args.Add("-map"); args.Add("[outa]");
         args.AddRange(BuildVideoCodecArgs(
-            codec, _settings.EncodePreset, _settings.Crf, _settings.NvencPreset, _settings.NvencCq));
+            codec, _settings.EncodePreset, _settings.Crf, _settings.NvencPreset, _settings.NvencCq,
+            _settings.RateMode, _settings.VideoBitrateK));
         args.Add("-c:a"); args.Add("aac");
         args.Add("-y"); args.Add(outputPath);
 
@@ -223,30 +224,37 @@ public sealed class AssembleStep : IStep
     }
 
     /// <summary>
-    /// Будує аргументи відеокодека. Гілки CPU/GPU несумісні за прапорцями:
-    ///   • libx264 — якість через -crf, пресет medium/slow/…;
-    ///   • h264_nvenc — НЕ розуміє -crf; якість через -rc vbr -cq N -b:v 0,
-    ///     пресети p1 (найшвидший) … p7 (найкращий). Винесено окремо й публічно — для тесту.
+    /// Будує аргументи відеокодека. Дві осі вибору:
+    ///   • кодек: libx264 (CPU) vs h264_nvenc (GPU) — прапорці несумісні;
+    ///   • режим: "quality" (стабільна якість) vs "bitrate" (цільовий розмір).
+    /// Шкали якості різні (x264 -crf N; nvenc -cq N), бітрейт спільний (-b:v {N}k).
+    /// Винесено окремо й публічно — для тесту.
     /// </summary>
     public static IReadOnlyList<string> BuildVideoCodecArgs(
-        string codec, string x264Preset, int crf, string nvencPreset, int nvencCq)
+        string codec, string x264Preset, int crf, string nvencPreset, int nvencCq,
+        string rateMode, int bitrateK)
     {
-        if (codec.Equals("nvenc", StringComparison.OrdinalIgnoreCase))
-            return new[]
-            {
-                "-c:v", "h264_nvenc",
-                "-preset", nvencPreset,
-                "-rc", "vbr",
-                "-cq", nvencCq.ToString(),
-                "-b:v", "0"
-            };
+        var byBitrate = rateMode.Equals("bitrate", StringComparison.OrdinalIgnoreCase);
 
-        return new[]
+        if (codec.Equals("nvenc", StringComparison.OrdinalIgnoreCase))
         {
-            "-c:v", "libx264",
-            "-preset", x264Preset,
-            "-crf", crf.ToString()
-        };
+            var nv = new List<string> { "-c:v", "h264_nvenc", "-preset", nvencPreset, "-rc", "vbr" };
+            if (byBitrate)
+                // Цільовий бітрейт: задаємо -b:v, без -cq (інакше vbr тяжіє до якості, не розміру).
+                nv.AddRange(new[] { "-b:v", $"{bitrateK}k" });
+            else
+                // Constant quality: -cq керує якістю, -b:v 0 знімає стелю бітрейту.
+                nv.AddRange(new[] { "-cq", nvencCq.ToString(), "-b:v", "0" });
+            return nv;
+        }
+
+        var x = new List<string> { "-c:v", "libx264", "-preset", x264Preset };
+        if (byBitrate)
+            // Однопрохідний ABR — для заливок достатньо (платформи все одно перекодовують).
+            x.AddRange(new[] { "-b:v", $"{bitrateK}k" });
+        else
+            x.AddRange(new[] { "-crf", crf.ToString() });
+        return x;
     }
 
     private static void ReportFfmpegLine(string line, IProgressReporter progress)
@@ -355,6 +363,17 @@ public sealed class AssembleSettings
     /// Аналог CRF, але шкала інша — 23 ≈ візуально близько до x264 crf 20.
     /// </summary>
     public int NvencCq { get; set; } = 23;
+
+    /// <summary>
+    /// Як керувати розміром/якістю: "quality" (CRF для CPU / CQ для GPU — стабільна
+    /// якість, плаваючий розмір, дефолт) | "bitrate" (цільовий відеобітрейт —
+    /// передбачуваний розмір файлу). Платформи все одно перекодовують заливки, тож
+    /// quality — правильний дефолт; bitrate потрібен, коли важливий розмір.
+    /// </summary>
+    public string RateMode { get; set; } = "quality";
+
+    /// <summary>Цільовий відеобітрейт у кбіт/с для режиму "bitrate" (-b:v {N}k).</summary>
+    public int VideoBitrateK { get; set; } = 6000;
 
     /// <summary>
     /// Якщо обрано NVENC, але GPU недоступний — тихо відкотитись на libx264

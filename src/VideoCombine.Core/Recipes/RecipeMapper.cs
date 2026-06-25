@@ -48,7 +48,15 @@ public static class RecipeMapper
                 Settings =
                 {
                     ["order"] = assemble.Order,
-                    ["videoCodec"] = assemble.VideoCodec
+                    ["videoCodec"] = assemble.VideoCodec,
+                    ["rateMode"] = assemble.RateMode,
+                    ["crf"] = assemble.Crf,
+                    ["nvencCq"] = assemble.NvencCq,
+                    ["encodePreset"] = assemble.EncodePreset,
+                    ["nvencPreset"] = assemble.NvencPreset,
+                    ["bitrateK"] = assemble.VideoBitrateK,
+                    // Контейнер persistимо як розширення; OutputFileName відновлюємо при читанні.
+                    ["container"] = ContainerOf(assemble.OutputFileName)
                 }
             }
         }
@@ -76,11 +84,19 @@ public static class RecipeMapper
     {
         var s = FindStep(recipe, Assemble)?.Settings;
         var def = new AssembleSettings();
+        var container = ReadString(s, "container", ContainerOf(def.OutputFileName));
         return new AssembleSettings
         {
             Mode = "encode",
             Order = ReadString(s, "order", def.Order),
-            VideoCodec = ReadString(s, "videoCodec", def.VideoCodec)
+            VideoCodec = ReadString(s, "videoCodec", def.VideoCodec),
+            RateMode = ReadString(s, "rateMode", def.RateMode),
+            Crf = ReadInt(s, "crf", def.Crf),
+            NvencCq = ReadInt(s, "nvencCq", def.NvencCq),
+            EncodePreset = ReadString(s, "encodePreset", def.EncodePreset),
+            NvencPreset = ReadString(s, "nvencPreset", def.NvencPreset),
+            VideoBitrateK = ReadInt(s, "bitrateK", def.VideoBitrateK),
+            OutputFileName = $"output.{container}"
         };
     }
 
@@ -109,5 +125,26 @@ public static class RecipeMapper
             long ll => ll,
             _ => double.TryParse(v.ToString(), out var p) ? p : fallback
         };
+    }
+
+    private static int ReadInt(IReadOnlyDictionary<string, object?>? settings, string key, int fallback)
+    {
+        if (settings is null || !settings.TryGetValue(key, out var v) || v is null) return fallback;
+        if (v is JsonElement je)
+            return je.ValueKind == JsonValueKind.Number && je.TryGetInt32(out var i) ? i : fallback;
+        return v switch
+        {
+            int ii => ii,
+            long ll => (int)ll,
+            double dd => (int)dd,
+            _ => int.TryParse(v.ToString(), out var p) ? p : fallback
+        };
+    }
+
+    /// <summary>Розширення (без крапки) з імені вихідного файлу — це й є контейнер. Дефолт "mp4".</summary>
+    private static string ContainerOf(string outputFileName)
+    {
+        var ext = System.IO.Path.GetExtension(outputFileName);
+        return string.IsNullOrEmpty(ext) ? "mp4" : ext.TrimStart('.').ToLowerInvariant();
     }
 }

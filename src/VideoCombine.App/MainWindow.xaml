@@ -3,6 +3,10 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="VideoCombine" Height="640" Width="960"
         WindowStartupLocation="CenterScreen">
+    <Window.Resources>
+        <!-- Видимість полів якість/бітрейт за режимом (IsQualityMode/IsBitrateMode). -->
+        <BooleanToVisibilityConverter x:Key="BoolToVis" />
+    </Window.Resources>
     <DockPanel>
         <!-- Таби верхнього рівня (розділ 4 архітектури). Поки наповнюємо лише «Виконання». -->
         <TabControl Margin="8">
@@ -154,6 +158,11 @@
                                 <Grid.RowDefinitions>
                                     <RowDefinition Height="Auto" />
                                     <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
                                 </Grid.RowDefinitions>
 
                                 <TextBlock Grid.Row="0" Grid.Column="0" Text="Порядок:" VerticalAlignment="Center" Margin="0,3" />
@@ -163,6 +172,37 @@
                                 <CheckBox Grid.Row="1" Grid.Column="1" Margin="0,6,0,0"
                                           IsChecked="{Binding UseNvenc}"
                                           Content="Кодувати на GPU (NVENC)" />
+
+                                <TextBlock Grid.Row="2" Grid.Column="0" Text="Контейнер:" VerticalAlignment="Center" Margin="0,3" />
+                                <ComboBox Grid.Row="2" Grid.Column="1" Margin="0,3" HorizontalAlignment="Left" Width="140"
+                                          ItemsSource="{Binding ContainerOptions}" SelectedItem="{Binding Container}" />
+
+                                <TextBlock Grid.Row="3" Grid.Column="0" Text="Кодування:" VerticalAlignment="Center" Margin="0,3" />
+                                <ComboBox Grid.Row="3" Grid.Column="1" Margin="0,3" HorizontalAlignment="Left" Width="180"
+                                          ItemsSource="{Binding RateModeOptions}"
+                                          DisplayMemberPath="Label" SelectedValuePath="Key"
+                                          SelectedValue="{Binding RateMode}" />
+
+                                <!-- Якість: лише в режимі "За якістю". -->
+                                <TextBlock Grid.Row="4" Grid.Column="0" Text="Якість:" VerticalAlignment="Center" Margin="0,3"
+                                           Visibility="{Binding IsQualityMode, Converter={StaticResource BoolToVis}}" />
+                                <TextBox Grid.Row="4" Grid.Column="1" Margin="0,3" HorizontalAlignment="Left" Width="60"
+                                         Text="{Binding Quality, UpdateSourceTrigger=PropertyChanged}"
+                                         Visibility="{Binding IsQualityMode, Converter={StaticResource BoolToVis}}"
+                                         ToolTip="CRF (CPU) / CQ (GPU): менше = краще якість і більший файл" />
+
+                                <!-- Бітрейт: лише в режимі "За бітрейтом". -->
+                                <TextBlock Grid.Row="5" Grid.Column="0" Text="Бітрейт, кбіт/с:" VerticalAlignment="Center" Margin="0,3"
+                                           Visibility="{Binding IsBitrateMode, Converter={StaticResource BoolToVis}}" />
+                                <TextBox Grid.Row="5" Grid.Column="1" Margin="0,3" HorizontalAlignment="Left" Width="80"
+                                         Text="{Binding VideoBitrateK, UpdateSourceTrigger=PropertyChanged}"
+                                         Visibility="{Binding IsBitrateMode, Converter={StaticResource BoolToVis}}"
+                                         ToolTip="Цільовий відеобітрейт — передбачуваний розмір файлу" />
+
+                                <TextBlock Grid.Row="6" Grid.Column="0" Text="Пресет:" VerticalAlignment="Center" Margin="0,3" />
+                                <ComboBox Grid.Row="6" Grid.Column="1" Margin="0,3" HorizontalAlignment="Left" Width="140"
+                                          ItemsSource="{Binding PresetOptions}" SelectedItem="{Binding EncodePreset}"
+                                          ToolTip="CPU: ultrafast…veryslow; GPU: p1…p7. Повільніше = краще стиснення." />
                             </Grid>
                             <TextBlock Margin="8,4,0,0" Foreground="Gray" FontSize="11" TextWrapping="Wrap"
                                        Text="NVENC ~3x швидше за CPU. Якщо GPU недоступний — автоматичний відкат на CPU (libx264)." />
