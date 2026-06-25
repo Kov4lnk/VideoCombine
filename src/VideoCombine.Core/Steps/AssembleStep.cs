@@ -115,7 +115,8 @@ public sealed class AssembleStep : IStep
         // коли сегменти різної роздільності/fps (напр. 1080p + 720p джерела).
         // Нормалізація лишається на CPU; h264_nvenc приймає кадри з софт-фільтрів сам.
         var filter = BuildConcatFilter(
-            segments.Count, _settings.TargetWidth, _settings.TargetHeight, _settings.TargetFps);
+            segments.Count, _settings.TargetWidth, _settings.TargetHeight, _settings.TargetFps,
+            _settings.FitMode);
 
         // Граф фільтрів пишемо у ФАЙЛ і передаємо через -filter_complex_script, а не
         // -filter_complex. Інакше на великій к-сті сегментів (сотні) стрічка фільтра
@@ -268,19 +269,28 @@ public sealed class AssembleStep : IStep
     /// Будує filter_complex: нормалізує КОЖЕН вхід до спільного формату,
     /// потім зшиває concat'ом. Винесено окремо й публічно — для тесту.
     ///
-    /// Нормалізація відео на вхід i:
-    ///   scale (вписати у WxH, зберегти пропорції) → pad (letterbox до WxH,
-    ///   центрувати) → setsar=1 (квадратний піксель) → fps (єдина частота).
+    /// Нормалізація відео на вхід i (залежить від fitMode):
+    ///   • "fit"  — scale (вписати у WxH, зберегти пропорції) → pad (letterbox,
+    ///              центрувати чорними полями). Весь кадр видно, формат не міняється.
+    ///   • "crop" — scale (заповнити WxH, зберегти пропорції, може вийти за межі) →
+    ///              crop (обрізати центр до WxH). Без полів, але краї втрачаються.
+    ///              Для вертикальних 9:16 з горизонтального джерела.
+    /// Далі: setsar=1 (квадратний піксель) → fps (єдина частота).
     /// Без цього concat падає (код -22) на сегментах різної роздільності/fps.
     /// Аудіо: aresample — щоб частоти дискретизації теж збіглися.
     /// </summary>
-    public static string BuildConcatFilter(int n, int width, int height, int fps)
+    public static string BuildConcatFilter(int n, int width, int height, int fps, string fitMode)
     {
+        var crop = fitMode.Equals("crop", StringComparison.OrdinalIgnoreCase);
+        // Спосіб вписати кадр: crop заповнює (increase) і ріже зайве; fit вписує (decrease) і паддить.
+        var scaleFit = crop
+            ? $"scale={width}:{height}:force_original_aspect_ratio=increase,crop={width}:{height}"
+            : $"scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2";
+
         var sb = new StringBuilder();
         for (int i = 0; i < n; i++)
         {
-            sb.Append($"[{i}:v:0]scale={width}:{height}:force_original_aspect_ratio=decrease,")
-              .Append($"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps={fps}[v{i}];")
+            sb.Append($"[{i}:v:0]{scaleFit},setsar=1,fps={fps}[v{i}];")
               .Append($"[{i}:a:0]aresample=async=1[a{i}];");
         }
         for (int i = 0; i < n; i++)
@@ -387,4 +397,12 @@ public sealed class AssembleSettings
     public int TargetWidth { get; set; } = 1920;
     public int TargetHeight { get; set; } = 1080;
     public int TargetFps { get; set; } = 30;
+
+    /// <summary>
+    /// Як вписати кадр джерела у цільовий формат (розділ 7.5):
+    ///   • "fit"  — letterbox (вписати повністю + чорні поля). Дефолт, добре для 16:9.
+    ///   • "crop" — заповнити кадр і обрізати краї (без полів). Для вертикальних 9:16,
+    ///              інакше letterbox дав би тонку смужку відео між полями.
+    /// </summary>
+    public string FitMode { get; set; } = "fit";
 }

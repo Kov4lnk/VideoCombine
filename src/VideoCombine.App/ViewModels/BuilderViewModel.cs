@@ -1,5 +1,6 @@
 namespace VideoCombine.App.ViewModels;
 
+using System.Linq;
 using CommunityToolkit.Mvvm.ComponentModel;
 using VideoCombine.Core.Steps;
 
@@ -46,6 +47,44 @@ public sealed partial class BuilderViewModel : ObservableObject
     [ObservableProperty] private string _assembleOrder = "sequential";
 
     public IReadOnlyList<string> AssembleOrderOptions { get; } = new[] { "sequential", "random" };
+
+    // --- Профіль платформи (розділ 7.5) ---
+
+    /// <summary>
+    /// Готові пресети роздільності/формату. Вибір накладає W/H/fps і дефолтний
+    /// FitMode; користувач може перевизначити формат кадру нижче.
+    /// </summary>
+    public IReadOnlyList<PlatformProfile> ProfileOptions { get; } = PlatformProfile.All;
+
+    [ObservableProperty] private PlatformProfile _selectedProfile = PlatformProfile.Default;
+
+    // Поточні цільові розміри/частота — їх задає профіль (або рецепт через Apply).
+    // Окремих полів вводу не робимо: керує лише профіль.
+    private int _targetWidth = PlatformProfile.Default.Width;
+    private int _targetHeight = PlatformProfile.Default.Height;
+    private int _targetFps = PlatformProfile.Default.Fps;
+
+    /// <summary>Що саме накладає профіль — показуємо біля дропдауна, щоб вибір був осмисленим.</summary>
+    public string ProfileResolutionText => $"{_targetWidth}×{_targetHeight}, {_targetFps} fps";
+
+    /// <summary>"fit" (вписати, чорні поля) | "crop" (заповнити, обрізати краї).</summary>
+    [ObservableProperty] private string _fitMode = "fit";
+
+    public IReadOnlyList<ComboOption> FitModeOptions { get; } = new[]
+    {
+        new ComboOption("fit", "Вписати (чорні поля)"),
+        new ComboOption("crop", "Обрізати під формат")
+    };
+
+    // Вибір профілю накладає його розміри й дефолтний формат кадру.
+    partial void OnSelectedProfileChanged(PlatformProfile value)
+    {
+        _targetWidth = value.Width;
+        _targetHeight = value.Height;
+        _targetFps = value.Fps;
+        FitMode = value.FitMode;
+        OnPropertyChanged(nameof(ProfileResolutionText));
+    }
 
     /// <summary>
     /// Кодувати склейку на GPU (h264_nvenc) замість CPU (libx264). Якщо GPU
@@ -130,6 +169,10 @@ public sealed partial class BuilderViewModel : ObservableObject
             EncodePreset = nvenc ? new AssembleSettings().EncodePreset : EncodePreset,
             NvencPreset = nvenc ? EncodePreset : new AssembleSettings().NvencPreset,
             VideoBitrateK = VideoBitrateK,
+            TargetWidth = _targetWidth,
+            TargetHeight = _targetHeight,
+            TargetFps = _targetFps,
+            FitMode = FitMode,
             OutputFileName = $"output.{Container}"
         };
     }
@@ -153,6 +196,18 @@ public sealed partial class BuilderViewModel : ObservableObject
         EncodePreset = UseNvenc ? assemble.NvencPreset : assemble.EncodePreset;
         VideoBitrateK = assemble.VideoBitrateK;
         Container = ContainerFromFileName(assemble.OutputFileName);
+
+        // Профіль: підбираємо за розмірами (для UI-підпису), якщо збігся; інакше
+        // лишаємо «Універсальний». Сам вибір профілю виставляє свої дефолти —
+        // тому ПІСЛЯ перекриваємо точними значеннями з рецепта.
+        SelectedProfile = ProfileOptions.FirstOrDefault(
+            p => p.Width == assemble.TargetWidth && p.Height == assemble.TargetHeight)
+            ?? PlatformProfile.Default;
+        _targetWidth = assemble.TargetWidth;
+        _targetHeight = assemble.TargetHeight;
+        _targetFps = assemble.TargetFps;
+        FitMode = assemble.FitMode;
+        OnPropertyChanged(nameof(ProfileResolutionText));
     }
 
     private static string ContainerFromFileName(string outputFileName)

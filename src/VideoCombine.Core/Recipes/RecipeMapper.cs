@@ -56,7 +56,12 @@ public static class RecipeMapper
                     ["nvencPreset"] = assemble.NvencPreset,
                     ["bitrateK"] = assemble.VideoBitrateK,
                     // Контейнер persistимо як розширення; OutputFileName відновлюємо при читанні.
-                    ["container"] = ContainerOf(assemble.OutputFileName)
+                    ["container"] = ContainerOf(assemble.OutputFileName),
+                    // Профіль платформи зберігаємо як самодостатні розміри+формат (не назву).
+                    ["targetWidth"] = assemble.TargetWidth,
+                    ["targetHeight"] = assemble.TargetHeight,
+                    ["targetFps"] = assemble.TargetFps,
+                    ["fitMode"] = assemble.FitMode
                 }
             }
         }
@@ -96,6 +101,10 @@ public static class RecipeMapper
             EncodePreset = ReadString(s, "encodePreset", def.EncodePreset),
             NvencPreset = ReadString(s, "nvencPreset", def.NvencPreset),
             VideoBitrateK = ReadInt(s, "bitrateK", def.VideoBitrateK),
+            TargetWidth = ReadInt(s, "targetWidth", def.TargetWidth),
+            TargetHeight = ReadInt(s, "targetHeight", def.TargetHeight),
+            TargetFps = ReadInt(s, "targetFps", def.TargetFps),
+            FitMode = ReadString(s, "fitMode", def.FitMode),
             OutputFileName = $"output.{container}"
         };
     }

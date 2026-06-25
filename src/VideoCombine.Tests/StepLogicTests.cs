@@ -124,11 +124,11 @@ public sealed class StepLogicTests
     // --- AssembleStep.BuildConcatFilter: нормалізація + concat ---
 
     [Fact]
-    public void BuildConcatFilter_нормалізує_кожен_вхід_і_зшиває()
+    public void BuildConcatFilter_fit_паддить_кожен_вхід_і_зшиває()
     {
-        var f = AssembleStep.BuildConcatFilter(n: 2, width: 1920, height: 1080, fps: 30);
+        var f = AssembleStep.BuildConcatFilter(n: 2, width: 1920, height: 1080, fps: 30, fitMode: "fit");
 
-        // Кожен вхід масштабується+паддиться до 1920x1080, setsar=1, fps=30.
+        // fit: вписати (decrease) + pad чорними полями до 1920x1080, setsar=1, fps=30.
         Assert.Contains("[0:v:0]scale=1920:1080:force_original_aspect_ratio=decrease", f);
         Assert.Contains("pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=30[v0]", f);
         Assert.Contains("[1:v:0]scale=1920:1080", f);
@@ -140,10 +140,43 @@ public sealed class StepLogicTests
     [Fact]
     public void BuildConcatFilter_один_сегмент()
     {
-        var f = AssembleStep.BuildConcatFilter(n: 1, width: 1280, height: 720, fps: 25);
+        var f = AssembleStep.BuildConcatFilter(n: 1, width: 1280, height: 720, fps: 25, fitMode: "fit");
 
         Assert.Contains("[0:v:0]scale=1280:720", f);
         Assert.Contains("[v0][a0]concat=n=1:v=1:a=1[outv][outa]", f);
+    }
+
+    [Fact]
+    public void BuildConcatFilter_crop_заповнює_і_ріже_без_pad()
+    {
+        // crop під вертикаль 9:16 з горизонтального джерела.
+        var f = AssembleStep.BuildConcatFilter(n: 2, width: 1080, height: 1920, fps: 30, fitMode: "crop");
+
+        // crop: заповнити (increase) + crop до WxH центром, setsar=1, fps.
+        Assert.Contains("[0:v:0]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1,fps=30[v0]", f);
+        // Без чорних полів — pad бути не повинно.
+        Assert.DoesNotContain("pad=", f);
+        Assert.DoesNotContain("force_original_aspect_ratio=decrease", f);
+        Assert.Contains("[v0][a0][v1][a1]concat=n=2:v=1:a=1[outv][outa]", f);
+    }
+
+    // --- PlatformProfile: вбудовані пресети ---
+
+    [Fact]
+    public void PlatformProfile_вертикальні_crop_горизонтальні_fit()
+    {
+        var all = PlatformProfile.All;
+
+        Assert.Equal("Універсальний 16:9 1080p", PlatformProfile.Default.Name);
+        Assert.Equal((1920, 1080, "fit"), Pick("Універсальний 16:9 1080p"));
+        Assert.Equal((1920, 1080, "fit"), Pick("YouTube 16:9 1080p"));
+        Assert.Equal((1080, 1920, "crop"), Pick("Вертикальне 9:16 (Shorts/TikTok/Reels)"));
+
+        (int, int, string) Pick(string name)
+        {
+            var p = all.First(x => x.Name == name);
+            return (p.Width, p.Height, p.FitMode);
+        }
     }
 
     // --- AssembleStep.BuildVideoCodecArgs: CPU/GPU × quality/bitrate ---
@@ -268,7 +301,7 @@ public sealed class StepLogicTests
     [Fact]
     public void RecipeMapper_round_trip_зберігає_опції_експорту()
     {
-        // Нетипові значення в режимі бітрейту + контейнер mkv + GPU-кодек.
+        // Нетипові значення: бітрейт + контейнер mkv + GPU-кодек + вертикальний профіль crop.
         var assemble = new AssembleSettings
         {
             Order = "random",
@@ -279,6 +312,10 @@ public sealed class StepLogicTests
             EncodePreset = "slow",
             NvencPreset = "p6",
             VideoBitrateK = 9000,
+            TargetWidth = 1080,
+            TargetHeight = 1920,
+            TargetFps = 30,
+            FitMode = "crop",
             OutputFileName = "output.mkv"
         };
         var cut = new CutSettings { Mode = "fixed", MinSec = 2, MaxSec = 5 };
@@ -304,6 +341,10 @@ public sealed class StepLogicTests
         Assert.Equal("slow", r.EncodePreset);
         Assert.Equal("p6", r.NvencPreset);
         Assert.Equal(9000, r.VideoBitrateK);
+        Assert.Equal(1080, r.TargetWidth);
+        Assert.Equal(1920, r.TargetHeight);
+        Assert.Equal(30, r.TargetFps);
+        Assert.Equal("crop", r.FitMode);
         Assert.Equal("output.mkv", r.OutputFileName);
         Assert.Equal("720p", RecipeMapper.ReadQuality(loaded));
     }
