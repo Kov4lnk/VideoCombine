@@ -15,18 +15,25 @@
                         <RowDefinition Height="*" />
                     </Grid.RowDefinitions>
 
-                    <!-- Єдине поле вставки: одне посилання або пачка по рядках (розділ 3.1). -->
+                    <!-- Єдина зона вводу (розділ 3.1): вставити посилання (Enter — додати,
+                         Shift+Enter — новий рядок) АБО перетягнути файли. «З диска» — те саме діалогом. -->
                     <DockPanel Grid.Row="0">
                         <TextBlock DockPanel.Dock="Top" Margin="0,0,0,4"
-                                   Text="Посилання (одне або кілька, по одному на рядок):" />
+                                   Text="Вставте посилання (Enter — додати) або перетягніть відеофайли сюди:" />
                         <TextBox Text="{Binding InputText, UpdateSourceTrigger=PropertyChanged}"
-                                 AcceptsReturn="True" Height="70" VerticalScrollBarVisibility="Auto" />
+                                 AcceptsReturn="True" Height="70" VerticalScrollBarVisibility="Auto"
+                                 AllowDrop="True"
+                                 PreviewKeyDown="SourcesInput_PreviewKeyDown"
+                                 PreviewDragEnter="SourcesDrop_DragOver"
+                                 PreviewDragOver="SourcesDrop_DragOver"
+                                 PreviewDrop="SourcesDrop_Drop" />
                     </DockPanel>
 
                     <!-- Дії + вибір якості. -->
                     <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,8">
-                        <Button Content="＋ Додати" Width="100" Margin="0,0,8,0"
-                                Command="{Binding AddCommand}" />
+                        <Button Content="📄 З диска" Width="100" Margin="0,0,8,0"
+                                Command="{Binding AddFromDiskCommand}"
+                                ToolTip="Додати локальні відеофайли (без завантаження)" />
                         <Button Content="Очистити все" Width="100" Margin="0,0,16,0"
                                 Command="{Binding ClearCommand}" />
                         <TextBlock Text="Якість:" VerticalAlignment="Center" Margin="0,0,6,0" />

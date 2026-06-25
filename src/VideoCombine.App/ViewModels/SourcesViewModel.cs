@@ -1,13 +1,16 @@
 namespace VideoCombine.App.ViewModels;
 
 using System.Collections.ObjectModel;
+using System.IO;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Microsoft.Win32;
 
 /// <summary>
 /// Логіка таба «Джерела» (розділ 3.1): єдине поле вставки (одне посилання
-/// або пачка по рядках), список доданих із валідацією + дедуплікацією,
-/// вибір якості. Те, що тут зібрано, споживає таб «Виконання».
+/// або пачка по рядках) + локальні файли з диска («З диска»), список доданих
+/// із валідацією + дедуплікацією, вибір якості. Те, що тут зібрано, споживає
+/// таб «Виконання».
 ///
 /// Свідомо поки БЕЗ: мініатюр, drag-and-drop файлів, перемикача гілки
 /// «відео/ідея», кнопки «Проаналізувати все» — це пізніші кроки (Фаза C/E).
@@ -43,6 +46,51 @@ public sealed partial class SourcesViewModel : ObservableObject
         RestartCommandsState();
     }
 
+    /// <summary>
+    /// Додати локальні відеофайли з диска через діалог. Делегує в AddLocalFiles —
+    /// та сама логіка, що й для перетягування (drag-and-drop).
+    /// </summary>
+    [RelayCommand]
+    private void AddFromDisk()
+    {
+        var dlg = new OpenFileDialog
+        {
+            Title = "Виберіть відеофайли",
+            Multiselect = true,
+            CheckFileExists = true,
+            Filter = "Відео (*.mp4;*.mkv;*.mov;*.webm;*.avi)|*.mp4;*.mkv;*.mov;*.webm;*.avi|Усі файли (*.*)|*.*"
+        };
+        if (dlg.ShowDialog() != true) return;
+        AddLocalFiles(dlg.FileNames);
+    }
+
+    /// <summary>
+    /// Додати локальні файли (з діалогу або перетягуванням у поле). Дублі за
+    /// повним шляхом пропускаємо. Локальні джерела завжди Valid (файл реальний),
+    /// окремий тип SourceKind.LocalFile — не валідуються як URL.
+    /// </summary>
+    public void AddLocalFiles(IEnumerable<string> paths)
+    {
+        foreach (var path in paths)
+        {
+            if (string.IsNullOrWhiteSpace(path)) continue;
+
+            var exists = Sources.Any(s =>
+                s.Kind == SourceKind.LocalFile &&
+                string.Equals(s.Url, path, StringComparison.OrdinalIgnoreCase));
+            if (exists) continue;
+
+            Sources.Add(new SourceItem
+            {
+                Url = path,
+                Kind = SourceKind.LocalFile,
+                Status = SourceStatus.Valid
+            });
+        }
+
+        RestartCommandsState();
+    }
+
     [RelayCommand]
     private void Remove(SourceItem? item)
     {
@@ -59,9 +107,17 @@ public sealed partial class SourcesViewModel : ObservableObject
         RestartCommandsState();
     }
 
-    /// <summary>Лише валідні посилання — для передачі в пайплайн.</summary>
+    /// <summary>Лише валідні URL-джерела — на завантаження yt-dlp.</summary>
     public IReadOnlyList<string> GetUsableUrls() =>
-        Sources.Where(s => s.IsUsable).Select(s => s.Url).ToList();
+        Sources.Where(s => s.Kind == SourceKind.Url && s.IsUsable).Select(s => s.Url).ToList();
+
+    /// <summary>Локальні файли — у пайплайн без завантаження.</summary>
+    public IReadOnlyList<string> GetLocalFiles() =>
+        Sources.Where(s => s.Kind == SourceKind.LocalFile).Select(s => s.Url).ToList();
+
+    /// <summary>Чи є хоч одне придатне джерело (URL або локальний файл) — для Старту.</summary>
+    public bool HasUsableSources() =>
+        Sources.Any(s => s.Kind == SourceKind.LocalFile || s.IsUsable);
 
     /// <summary>Якість у форматі, який розуміє DownloadSettings ("best"/"1080p"/...).</summary>
     public string GetQualityValue() =>
@@ -100,6 +156,9 @@ public sealed partial class SourcesViewModel : ObservableObject
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var item in Sources)
         {
+            // Локальні файли не валідуємо як URL — їхній статус сталий.
+            if (item.Kind == SourceKind.LocalFile) continue;
+
             if (!LooksLikeUrl(item.Url))
             {
                 item.Status = SourceStatus.Invalid;

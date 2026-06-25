@@ -1,6 +1,8 @@
 namespace VideoCombine.Tests;
 
+using VideoCombine.Core.External;
 using VideoCombine.Core.Models;
+using VideoCombine.Core.Pipeline;
 using VideoCombine.Core.Steps;
 using Xunit;
 
@@ -192,6 +194,51 @@ public sealed class StepLogicTests
         var s = new DownloadSettings { Quality = quality };
         Assert.Equal(expected, s.BuildFormatSelector());
     }
+
+    // --- DownloadStep.GetRequirements: локальні файли vs URL ---
+
+    [Fact]
+    public void Requirements_лише_локальні_файли_не_вимагають_ytdlp()
+    {
+        var step = new DownloadStep(new ProcessRunner(),
+            new DownloadSettings { LocalFiles = { @"C:\video.mp4" } });
+        // yt-dlp НЕ вказано — але для самих локальних це не має блокувати.
+        var ctx = MakeContext(ytDlpPath: "");
+
+        var blocking = step.GetRequirements(ctx).Where(r => r.IsBlocking).ToList();
+
+        Assert.Empty(blocking);
+    }
+
+    [Fact]
+    public void Requirements_url_без_ytdlp_блокує()
+    {
+        var step = new DownloadStep(new ProcessRunner(),
+            new DownloadSettings { Urls = { "https://example.com/v" } });
+        var ctx = MakeContext(ytDlpPath: "");
+
+        var blocking = step.GetRequirements(ctx).Where(r => r.IsBlocking).ToList();
+
+        Assert.Contains(blocking, r => r.Message.Contains("yt-dlp"));
+    }
+
+    [Fact]
+    public void Requirements_порожні_джерела_блокують()
+    {
+        var step = new DownloadStep(new ProcessRunner(), new DownloadSettings());
+        var ctx = MakeContext(ytDlpPath: @"C:\yt-dlp.exe");
+
+        var blocking = step.GetRequirements(ctx).Where(r => r.IsBlocking).ToList();
+
+        Assert.Single(blocking);
+    }
+
+    private static PipelineContext MakeContext(string ytDlpPath) => new()
+    {
+        WorkingDirectory = @"C:\work",
+        OutputDirectory = @"C:\out",
+        Settings = new AppSettings { YtDlpPath = ytDlpPath }
+    };
 
     private static Segment Seg(string id, string path) =>
         new() { Id = id, FilePath = path, SourceId = "src", Start = TimeSpan.Zero, Duration = TimeSpan.FromSeconds(1) };

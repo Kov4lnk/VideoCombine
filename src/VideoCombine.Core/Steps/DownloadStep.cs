@@ -24,7 +24,9 @@ public sealed class DownloadStep : IStep
     }
 
     public string TypeId => "download";
-    public string DisplayName => "Завантаження";
+
+    // Крок збирає джерела двох типів: завантажені з URL і локальні файли з диска.
+    public string DisplayName => "Джерела";
 
     // Мережа: більше потоків не прискорить і дратує сервери (розділ 8.3).
     public int MaxConcurrency => 4;
@@ -32,15 +34,33 @@ public sealed class DownloadStep : IStep
     public IReadOnlyList<StepRequirement> GetRequirements(PipelineContext context)
     {
         var reqs = new List<StepRequirement>();
-        if (_settings.Urls.Count == 0)
-            reqs.Add(new StepRequirement("Немає посилань для завантаження", IsBlocking: true));
-        if (string.IsNullOrWhiteSpace(context.Settings.YtDlpPath))
+        // Має бути хоч щось: або посилання, або локальні файли.
+        if (_settings.Urls.Count == 0 && _settings.LocalFiles.Count == 0)
+            reqs.Add(new StepRequirement("Немає джерел (посилань або локальних файлів)", IsBlocking: true));
+        // yt-dlp потрібен ЛИШЕ для завантаження з URL; для самих локальних — ні.
+        if (_settings.Urls.Count > 0 && string.IsNullOrWhiteSpace(context.Settings.YtDlpPath))
             reqs.Add(new StepRequirement("Не вказано шлях до yt-dlp", IsBlocking: true));
         return reqs;
     }
 
     public async Task ExecuteAsync(PipelineContext context, IProgressReporter progress, CancellationToken token)
     {
+        // 1) Локальні файли — у джерела напряму, без завантаження (вже на диску).
+        foreach (var path in _settings.LocalFiles)
+        {
+            var source = MakeLocalSource(path);
+            if (source is not null)
+            {
+                context.Sources.Add(source);
+                progress.Log(LogLevel.Success, $"Локальний файл: {source.Title ?? source.Id}");
+            }
+            else
+            {
+                progress.Log(LogLevel.Warning, $"Локальний файл пропущено (не знайдено): {path}");
+            }
+        }
+
+        // 2) Завантаження з URL (паралельно, з лімітом мережі).
         var limit = Math.Min(MaxConcurrency, context.Settings.MaxDownloadConcurrency);
         using var gate = new SemaphoreSlim(limit);
 
@@ -70,14 +90,33 @@ public sealed class DownloadStep : IStep
             {
                 gate.Release();
                 var n = Interlocked.Increment(ref done);
-                progress.ReportStepProgress($"{n}/{total} посилань", (double)n / total);
+                if (total > 0)
+                    progress.ReportStepProgress($"{n}/{total} посилань", (double)n / total);
             }
         });
 
         await Task.WhenAll(tasks);
 
         if (context.Sources.Count == 0)
-            throw new InvalidOperationException("Жодне посилання не вдалося завантажити");
+            throw new InvalidOperationException("Жодне джерело не вдалося додати");
+    }
+
+    /// <summary>
+    /// Локальний файл як джерело: без завантаження, лише валідуємо існування.
+    /// Id — імʼя файлу без розширення (для нарізки/іменування сегментів);
+    /// SourceUrl лишаємо null — ознака, що джерело локальне, не з мережі.
+    /// </summary>
+    private static SourceVideo? MakeLocalSource(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path)) return null;
+        var id = Path.GetFileNameWithoutExtension(path);
+        return new SourceVideo
+        {
+            Id = id,
+            FilePath = path,
+            SourceUrl = null,
+            Title = id
+        };
     }
 
     private async Task<SourceVideo?> DownloadOneAsync(
@@ -137,6 +176,14 @@ public sealed class DownloadSettings
 {
     /// <summary>Посилання на відео для завантаження.</summary>
     public List<string> Urls { get; set; } = new();
+
+    /// <summary>
+    /// Локальні відеофайли з диска — додаються в джерела БЕЗ завантаження
+    /// (вже на диску). Шляхи не серіалізуємо в рецепт за замовчуванням сенсу:
+    /// машинозалежні, як і налаштування. Поки лишаємо в DownloadSettings заради
+    /// одного кроку-джерела (варіант A: «Завантаження» збирає і URL, і локальні).
+    /// </summary>
+    public List<string> LocalFiles { get; set; } = new();
 
     /// <summary>Бажана якість: "best" | "1080p" | "720p" | "480p".</summary>
     public string Quality { get; set; } = "best";

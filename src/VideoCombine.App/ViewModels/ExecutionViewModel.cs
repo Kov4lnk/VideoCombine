@@ -60,13 +60,15 @@ public sealed partial class ExecutionViewModel : ObservableObject, IPipelineProg
 
     // --- Команди ---
 
-    /// <summary>Старт доступний лише коли не біжимо й є хоч одне валідне джерело.</summary>
-    private bool CanStart() => !IsRunning && _sources.GetUsableUrls().Count > 0;
+    /// <summary>Старт доступний лише коли не біжимо й є хоч одне джерело (URL або файл).</summary>
+    private bool CanStart() => !IsRunning && _sources.HasUsableSources();
 
     [RelayCommand(CanExecute = nameof(CanStart))]
     private async Task StartAsync()
     {
         var urls = _sources.GetUsableUrls();
+        var localFiles = _sources.GetLocalFiles();
+        if (urls.Count == 0 && localFiles.Count == 0) return;
         if (urls.Count == 0) return;
 
         IsRunning = true;
@@ -97,7 +99,12 @@ public sealed partial class ExecutionViewModel : ObservableObject, IPipelineProg
 
         var steps = new List<IStep>
         {
-            new DownloadStep(runner, new DownloadSettings { Urls = urls.ToList(), Quality = _sources.GetQualityValue() }),
+            new DownloadStep(runner, new DownloadSettings
+            {
+                Urls = urls.ToList(),
+                LocalFiles = localFiles.ToList(),
+                Quality = _sources.GetQualityValue()
+            }),
             new AnalyzeStep(runner),
             new CutStep(runner, _builder.BuildCutSettings()),
             new AssembleStep(runner, _builder.BuildAssembleSettings())
