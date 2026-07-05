@@ -122,8 +122,15 @@ public sealed class DownloadStep : IStep
     private async Task<SourceVideo?> DownloadOneAsync(
         string url, PipelineContext context, IProgressReporter progress, CancellationToken token)
     {
+        // Куди класти готовий файл: явне призначення (режим «тільки завантажити»
+        // кладе в Output) або, як зазвичай, робоча папка прогону для подальшої обробки.
+        var destDir = string.IsNullOrWhiteSpace(_settings.DestinationDirectory)
+            ? context.WorkingDirectory
+            : _settings.DestinationDirectory!;
+        Directory.CreateDirectory(destDir);
+
         // %(id)s — стабільний ідентифікатор від платформи; розширення обирає yt-dlp.
-        var outputTemplate = Path.Combine(context.WorkingDirectory, "%(id)s.%(ext)s");
+        var outputTemplate = Path.Combine(destDir, "%(id)s.%(ext)s");
 
         // --print after_move:filepath друкує ТОЧНИЙ фінальний шлях після завантаження.
         // --no-simulate потрібен, щоб --print не вимкнув саме завантаження.
@@ -187,6 +194,13 @@ public sealed class DownloadSettings
 
     /// <summary>Бажана якість: "best" | "1080p" | "720p" | "480p".</summary>
     public string Quality { get; set; } = "best";
+
+    /// <summary>
+    /// Куди класти завантажені файли. null/порожнє — робоча папка прогону (дефолт,
+    /// для подальшої обробки). Режим «тільки завантажити» задає сюди Output, щоб
+    /// файли лишились під рукою, а не в тимчасовій папці.
+    /// </summary>
+    public string? DestinationDirectory { get; set; }
 
     /// <summary>
     /// Перетворює бажану якість у формат-селектор yt-dlp.

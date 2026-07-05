@@ -16,6 +16,7 @@
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
                         <RowDefinition Height="*" />
                     </Grid.RowDefinitions>
 
@@ -46,11 +47,23 @@
                                   SelectedItem="{Binding Quality}" />
                     </StackPanel>
 
-                    <TextBlock Grid.Row="2" Margin="0,0,0,4" Foreground="Gray"
+                    <!-- Швидке завантаження без подальшої обробки. Команди живуть в Execution
+                         (там логіка прогону) — тягнемо через Window, як тулбар рецептів. -->
+                    <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,0,0,8"
+                                DataContext="{Binding DataContext.Execution, RelativeSource={RelativeSource AncestorType=Window}}">
+                        <Button Content="⬇ Тільки завантажити" Width="160" Margin="0,0,8,0"
+                                Command="{Binding DownloadOnlyCommand}"
+                                ToolTip="Скачати відео з посилань у папку Output, без нарізки й склейки" />
+                        <Button Content="📂 Папка завантажень" Width="160"
+                                Command="{Binding OpenDownloadFolderCommand}"
+                                ToolTip="Відкрити папку Output у провіднику" />
+                    </StackPanel>
+
+                    <TextBlock Grid.Row="3" Margin="0,0,0,4" Foreground="Gray"
                                Text="Додані джерела:" />
 
                     <!-- Список доданих: посилання + статус валідації. -->
-                    <Border Grid.Row="3" BorderBrush="#DDD" BorderThickness="1">
+                    <Border Grid.Row="4" BorderBrush="#DDD" BorderThickness="1">
                         <ListBox ItemsSource="{Binding Sources}" BorderThickness="0"
                                  HorizontalContentAlignment="Stretch"
                                  ScrollViewer.HorizontalScrollBarVisibility="Disabled">
@@ -145,6 +158,26 @@
                                 <TextBox Grid.Row="2" Grid.Column="1" Margin="0,3" HorizontalAlignment="Left" Width="60"
                                          Text="{Binding CutMaxSec, UpdateSourceTrigger=PropertyChanged}" />
                             </Grid>
+
+                            <Separator Margin="0,14" />
+
+                            <!-- Апскейл (UpscaleStep) — перший опційний крок -->
+                            <TextBlock Text="🔍 Апскейл" FontWeight="SemiBold" FontSize="14" Margin="0,4,0,6" />
+                            <StackPanel Margin="8,0,0,0">
+                                <CheckBox IsChecked="{Binding UpscaleEnabled}"
+                                          Content="Збільшувати роздільність сегментів" />
+                                <Grid Margin="0,6,0,0" IsEnabled="{Binding UpscaleEnabled}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="110" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="Множник:" VerticalAlignment="Center" Margin="0,3" />
+                                    <ComboBox Grid.Column="1" Margin="0,3" HorizontalAlignment="Left" Width="60"
+                                              ItemsSource="{Binding UpscaleScaleOptions}" SelectedItem="{Binding UpscaleScale}" />
+                                </Grid>
+                                <TextBlock Foreground="Gray" FontSize="11" TextWrapping="Wrap" Margin="0,2,0,0"
+                                           Text="FFmpeg-scale (lanczos): просте збільшення без AI. Множник ×2/×4 по кожній осі. Опційний крок — між Нарізкою і Склейкою." />
+                            </StackPanel>
 
                             <Separator Margin="0,14" />
 
@@ -296,7 +329,7 @@
                     </Border>
 
                     <TextBlock Grid.Row="4" Margin="0,6,0,0" Foreground="Gray" FontSize="11"
-                               Text="Ланцюг: Завантаження → Аналіз → Нарізка → Склейка. Налаштування кроків — на табі «Конструктор»." />
+                               Text="Ланцюг: Завантаження → Аналіз → Нарізка → [Апскейл] → Склейка. Апскейл — лише якщо увімкнено. Налаштування кроків — на табі «Конструктор»." />
                 </Grid>
             </TabItem>
             <TabItem Header="Налаштування">

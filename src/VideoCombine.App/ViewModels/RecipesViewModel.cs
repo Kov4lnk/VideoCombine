@@ -50,6 +50,7 @@ public sealed partial class RecipesViewModel : ObservableObject
                 RecipeName.Trim(),
                 _sources.GetQualityValue(),
                 _builder.BuildCutSettings(),
+                _builder.BuildUpscaleSettings(),
                 _builder.BuildAssembleSettings());
 
             await _store.SaveAsync(recipe);
@@ -79,7 +80,10 @@ public sealed partial class RecipesViewModel : ObservableObject
 
             // Заливаємо в обидва таби, з яких рецепт зібрано.
             _sources.SetQualityFromValue(RecipeMapper.ReadQuality(recipe));
-            _builder.Apply(RecipeMapper.ReadCutSettings(recipe), RecipeMapper.ReadAssembleSettings(recipe));
+            _builder.Apply(
+                RecipeMapper.ReadCutSettings(recipe),
+                RecipeMapper.ReadUpscaleSettings(recipe),
+                RecipeMapper.ReadAssembleSettings(recipe));
 
             RecipeName = recipe.Name;
             Status = $"Завантажено: {recipe.Name}";

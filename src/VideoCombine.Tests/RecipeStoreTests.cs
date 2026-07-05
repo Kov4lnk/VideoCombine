@@ -1,5 +1,6 @@
 namespace VideoCombine.Tests;
 
+using VideoCombine.Core.Providers;
 using VideoCombine.Core.Recipes;
 using VideoCombine.Core.Steps;
 using Xunit;
@@ -47,6 +48,7 @@ public sealed class RecipeStoreTests
             name: "Тест мапера",
             quality: "1080p",
             cut: new CutSettings { Mode = "fixed", MinSec = 4, MaxSec = 10 },
+            upscale: new UpscaleSettings { Enabled = true, Scale = 2 },
             assemble: new AssembleSettings { Order = "random", VideoCodec = "nvenc" });
 
         // ...і ганяємо через файл — тут значення стають JsonElement.
@@ -65,6 +67,10 @@ public sealed class RecipeStoreTests
         var asm = RecipeMapper.ReadAssembleSettings(loaded!);
         Assert.Equal("random", asm.Order);
         Assert.Equal("nvenc", asm.VideoCodec);
+
+        var up = RecipeMapper.ReadUpscaleSettings(loaded!);
+        Assert.True(up.Enabled);
+        Assert.Equal(2, up.Scale);
 
         Directory.Delete(dir, recursive: true);
     }

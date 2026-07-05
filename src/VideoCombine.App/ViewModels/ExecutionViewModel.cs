@@ -10,6 +10,7 @@ using CommunityToolkit.Mvvm.Input;
 using VideoCombine.Core.External;
 using VideoCombine.Core.Models;
 using VideoCombine.Core.Pipeline;
+using VideoCombine.Core.Providers;
 using VideoCombine.Core.Steps;
 
 /// <summary>
@@ -34,7 +35,11 @@ public sealed partial class ExecutionViewModel : ObservableObject, IPipelineProg
         _builder = builder;
         _settings = settings;
         // Старт залежить від наявності валідних джерел — оновлюємо, коли список змінюється.
-        _sources.Sources.CollectionChanged += (_, _) => StartCommand.NotifyCanExecuteChanged();
+        _sources.Sources.CollectionChanged += (_, _) =>
+        {
+            StartCommand.NotifyCanExecuteChanged();
+            DownloadOnlyCommand.NotifyCanExecuteChanged();
+        };
     }
 
     // --- Поля для прив'язки (генерують властивості + сповіщення) ---
@@ -69,8 +74,56 @@ public sealed partial class ExecutionViewModel : ObservableObject, IPipelineProg
         var urls = _sources.GetUsableUrls();
         var localFiles = _sources.GetLocalFiles();
         if (urls.Count == 0 && localFiles.Count == 0) return;
+
+        // Повний ланцюг відеогілки. Потрібні всі інструменти (ffmpeg для нарізки/склейки).
+        await RunPipelineAsync(
+            buildSteps: (runner, settings) => BuildSteps(runner, settings, urls, localFiles),
+            missingTools: ToolChecker.MissingTools);
+    }
+
+    /// <summary>«Тільки завантажити» доступне, коли не біжимо й є хоч один валідний URL.
+    /// Локальні файли тут ні до чого — вони вже на диску, качати нема чого.</summary>
+    private bool CanDownloadOnly() => !IsRunning && _sources.GetUsableUrls().Count > 0;
+
+    /// <summary>
+    /// Скачати відео з URL і зупинитись — без нарізки/склейки. Ланцюг із одного
+    /// DownloadStep, файли лягають в Output (не в тимчасову робочу папку). Зручний
+    /// шорткат для частого сценарію «просто завантаж». Загальний механізм вмикання/
+    /// вимикання кроків з'явиться окремим слайсом, коли опційних кроків стане більше.
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(CanDownloadOnly))]
+    private async Task DownloadOnlyAsync()
+    {
+        var urls = _sources.GetUsableUrls();
         if (urls.Count == 0) return;
 
+        await RunPipelineAsync(
+            buildSteps: (runner, settings) => new List<IStep>
+            {
+                new DownloadStep(runner, new DownloadSettings
+                {
+                    Urls = urls.ToList(),
+                    Quality = _sources.GetQualityValue(),
+                    // Кладемо готові файли в Output, щоб лишились під рукою.
+                    DestinationDirectory = settings.OutputRoot
+                })
+            },
+            // Для завантаження ffmpeg/ffprobe не потрібні — перевіряємо лише yt-dlp.
+            missingTools: s => ToolChecker.ToolPresent(s.YtDlpPath)
+                ? Array.Empty<string>()
+                : new[] { "Не вказано або не знайдено yt-dlp (таб «Налаштування»)" });
+    }
+
+    /// <summary>
+    /// Спільний каркас прогону для всіх режимів (повний ланцюг, тільки завантаження
+    /// тощо): прапор IsRunning, таймер, передпольотна перевірка інструментів, фон,
+    /// обробка скасування/помилок. Відрізняються лише набір кроків (buildSteps) і
+    /// які інструменти обов'язкові (missingTools).
+    /// </summary>
+    private async Task RunPipelineAsync(
+        Func<ProcessRunner, AppSettings, List<IStep>> buildSteps,
+        Func<AppSettings, IReadOnlyList<string>> missingTools)
+    {
         IsRunning = true;
         LogEntries.Clear();
         FinalOutputPath = null;
@@ -83,7 +136,7 @@ public sealed partial class ExecutionViewModel : ObservableObject, IPipelineProg
 
         // Передпольотна перевірка інструментів (розділ 9): краще чіткий лог тут,
         // ніж падіння посеред пайплайну. Шляхи редагуються в табі «Налаштування».
-        var missing = ToolChecker.MissingTools(settings);
+        var missing = missingTools(settings);
         if (missing.Count > 0)
         {
             foreach (var m in missing) AppendLog(LogLevel.Error, m);
@@ -96,19 +149,7 @@ public sealed partial class ExecutionViewModel : ObservableObject, IPipelineProg
         }
 
         var runner = new ProcessRunner();
-
-        var steps = new List<IStep>
-        {
-            new DownloadStep(runner, new DownloadSettings
-            {
-                Urls = urls.ToList(),
-                LocalFiles = localFiles.ToList(),
-                Quality = _sources.GetQualityValue()
-            }),
-            new AnalyzeStep(runner),
-            new CutStep(runner, _builder.BuildCutSettings()),
-            new AssembleStep(runner, _builder.BuildAssembleSettings())
-        };
+        var steps = buildSteps(runner, settings);
 
         var context = new PipelineContext
         {
@@ -143,6 +184,42 @@ public sealed partial class ExecutionViewModel : ObservableObject, IPipelineProg
         }
     }
 
+    /// <summary>
+    /// Збирає ланцюг кроків відеогілки. Завантаження→Аналіз→Нарізка→[Апскейл]→Склейка.
+    /// Апскейл — ПЕРШИЙ опційний крок: вставляється між Нарізкою і Склейкою лише
+    /// коли увімкнено в Конструкторі. Уся логіка порядку/опційності тут, в одному
+    /// місці — коли з'явиться UI перетягування/вимикання кроків, переписуємо цей
+    /// метод, а не полюємо на спецкейси по в'юмоделях.
+    /// </summary>
+    private List<IStep> BuildSteps(
+        ProcessRunner runner, AppSettings settings,
+        IReadOnlyList<string> urls, IReadOnlyList<string> localFiles)
+    {
+        var steps = new List<IStep>
+        {
+            new DownloadStep(runner, new DownloadSettings
+            {
+                Urls = urls.ToList(),
+                LocalFiles = localFiles.ToList(),
+                Quality = _sources.GetQualityValue()
+            }),
+            new AnalyzeStep(runner),
+            new CutStep(runner, _builder.BuildCutSettings())
+        };
+
+        var upscale = _builder.BuildUpscaleSettings();
+        if (upscale.Enabled)
+        {
+            // Поки єдиний бекенд — FFmpeg-scale. Інші (Real-ESRGAN, хмара) стануть
+            // тут вибором за upscale.Provider, реалізуючи той самий IUpscaleProvider.
+            var provider = new FFmpegScaleUpscaler(runner, settings.FfmpegPath);
+            steps.Add(new UpscaleStep(provider, upscale));
+        }
+
+        steps.Add(new AssembleStep(runner, _builder.BuildAssembleSettings()));
+        return steps;
+    }
+
     private bool CanCancel() => IsRunning;
 
     [RelayCommand(CanExecute = nameof(CanCancel))]
@@ -158,6 +235,24 @@ public sealed partial class ExecutionViewModel : ObservableObject, IPipelineProg
         System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
         {
             FileName = FinalOutputPath,
+            UseShellExecute = true
+        });
+    }
+
+    /// <summary>
+    /// Відкрити папку Output у провіднику — куди лягають завантажені файли й готові
+    /// відео. Зручно після «Тільки завантажити». Папку створюємо, якщо ще нема,
+    /// щоб провідник не лаявся на неіснуючий шлях.
+    /// </summary>
+    [RelayCommand]
+    private void OpenDownloadFolder()
+    {
+        var dir = _settings.ToAppSettings().OutputRoot;
+        if (string.IsNullOrWhiteSpace(dir)) return;
+        Directory.CreateDirectory(dir);
+        System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+        {
+            FileName = dir,
             UseShellExecute = true
         });
     }
@@ -253,6 +348,7 @@ public sealed partial class ExecutionViewModel : ObservableObject, IPipelineProg
     partial void OnIsRunningChanged(bool value)
     {
         StartCommand.NotifyCanExecuteChanged();
+        DownloadOnlyCommand.NotifyCanExecuteChanged();
         CancelCommand.NotifyCanExecuteChanged();
         OpenResultCommand.NotifyCanExecuteChanged();
     }

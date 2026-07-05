@@ -2,17 +2,18 @@ namespace VideoCombine.App.ViewModels;
 
 using System.Linq;
 using CommunityToolkit.Mvvm.ComponentModel;
+using VideoCombine.Core.Providers;
 using VideoCombine.Core.Steps;
 
 /// <summary>
 /// Логіка таба «Конструктор» (розділ 4) — джерело правди для налаштувань кроків.
 /// Раніше «Виконання» будувало ланцюг із захардкоджених значень; тепер бере їх
-/// звідси. Тримає налаштування Нарізки й Склейки, віддає готові *Settings.
+/// звідси. Тримає налаштування Нарізки, Апскейлу й Склейки, віддає готові *Settings.
 ///
-/// Свідомо поки БЕЗ: галочок увімк/вимк кроків (усі 4 кроки відеогілки поки
-/// обов'язкові — вимикати нічого) і перетягування порядку. З'являться, коли
-/// будуть опційні кроки (апскейл, субтитри — пізніші фази). Якість завантаження
-/// живе на табі «Джерела», тут не дублюється.
+/// Апскейл — перший ОПЦІЙНИЙ крок (галочка UpscaleEnabled). Повноцінне
+/// перетягування порядку й вимикання решти кроків з'явиться окремим слайсом,
+/// коли опційних кроків стане більше (субтитри, TTS — пізніші фази). Якість
+/// завантаження живе на табі «Джерела», тут не дублюється.
 /// </summary>
 public sealed partial class BuilderViewModel : ObservableObject
 {
@@ -40,6 +41,20 @@ public sealed partial class BuilderViewModel : ObservableObject
 
     [ObservableProperty] private double _cutMinSec = 3;
     [ObservableProperty] private double _cutMaxSec = 8;
+
+    // --- Апскейл (UpscaleStep) — ПЕРШИЙ опційний крок ---
+
+    /// <summary>
+    /// Чи вставляти крок апскейлу в ланцюг. Дефолт false: на відміну від решти
+    /// кроків відеогілки, апскейл необов'язковий. Виконавець вставляє UpscaleStep
+    /// між Нарізкою і Склейкою лише коли true.
+    /// </summary>
+    [ObservableProperty] private bool _upscaleEnabled;
+
+    /// <summary>У скільки разів збільшити роздільність сегментів.</summary>
+    [ObservableProperty] private int _upscaleScale = 2;
+
+    public IReadOnlyList<int> UpscaleScaleOptions { get; } = new[] { 2, 4 };
 
     // --- Склейка (AssembleStep) ---
 
@@ -153,6 +168,14 @@ public sealed partial class BuilderViewModel : ObservableObject
         MaxSec = CutMaxSec
     };
 
+    /// <summary>Налаштування апскейлу за поточним станом панелі.</summary>
+    public UpscaleSettings BuildUpscaleSettings() => new()
+    {
+        Enabled = UpscaleEnabled,
+        Provider = "ffmpeg-scale",
+        Scale = UpscaleScale
+    };
+
     /// <summary>Налаштування склейки за поточним станом панелі.</summary>
     public AssembleSettings BuildAssembleSettings()
     {
@@ -179,13 +202,16 @@ public sealed partial class BuilderViewModel : ObservableObject
 
     /// <summary>
     /// Заливає налаштування в поля панелі (завантаження рецепта). Зворотне до
-    /// BuildCutSettings/BuildAssembleSettings. Прив'язки оновлять UI самі.
+    /// BuildCutSettings/BuildUpscaleSettings/BuildAssembleSettings. Прив'язки оновлять UI самі.
     /// </summary>
-    public void Apply(CutSettings cut, AssembleSettings assemble)
+    public void Apply(CutSettings cut, UpscaleSettings upscale, AssembleSettings assemble)
     {
         CutMode = cut.Mode;
         CutMinSec = cut.MinSec;
         CutMaxSec = cut.MaxSec;
+
+        UpscaleEnabled = upscale.Enabled;
+        UpscaleScale = upscale.Scale;
 
         AssembleOrder = assemble.Order;
         // UseNvenc ПЕРШИМ: його OnChanged скидає EncodePreset у дефолт шкали — далі

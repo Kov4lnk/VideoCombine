@@ -3,6 +3,7 @@ namespace VideoCombine.Tests;
 using VideoCombine.Core.External;
 using VideoCombine.Core.Models;
 using VideoCombine.Core.Pipeline;
+using VideoCombine.Core.Providers;
 using VideoCombine.Core.Recipes;
 using VideoCombine.Core.Steps;
 using Xunit;
@@ -320,7 +321,7 @@ public sealed class StepLogicTests
         };
         var cut = new CutSettings { Mode = "fixed", MinSec = 2, MaxSec = 5 };
 
-        var recipe = RecipeMapper.ToRecipe("test", "720p", cut, assemble);
+        var recipe = RecipeMapper.ToRecipe("test", "720p", cut, new UpscaleSettings(), assemble);
 
         // Кругообіг через JSON тими самими опціями, що й RecipeStore — після нього
         // значення в Settings вертаються як JsonElement, а не raw int/string.
@@ -366,6 +367,71 @@ public sealed class StepLogicTests
         Assert.Equal(def.Crf, r.Crf);
         Assert.Equal(def.VideoBitrateK, r.VideoBitrateK);
         Assert.Equal("output.mp4", r.OutputFileName);
+    }
+
+    // --- FFmpegScaleUpscaler.BuildScaleArgs: аргументи масштабування ---
+
+    [Fact]
+    public void BuildScaleArgs_множить_розмір_парно_lanczos()
+    {
+        var a = FFmpegScaleUpscaler.BuildScaleArgs(@"C:\work\seg.mp4", @"C:\work\seg_up2.mp4", scale: 2);
+
+        // Множник у формулі, привід до парного (trunc/2*2), lanczos-фільтр.
+        Assert.Contains("scale=trunc(iw*2/2)*2:trunc(ih*2/2)*2:flags=lanczos", a);
+        // Відео перекодовуємо, аудіо копіюємо без змін.
+        Assert.Contains("libx264", a);
+        Assert.Equal("copy", a[a.ToList().IndexOf("-c:a") + 1]);
+        // Вхід і вихід на місці.
+        Assert.Equal(@"C:\work\seg.mp4", a[a.ToList().IndexOf("-i") + 1]);
+        Assert.Equal(@"C:\work\seg_up2.mp4", a[^1]);
+    }
+
+    [Fact]
+    public void BuildScaleArgs_множник_4_у_формулі()
+    {
+        var a = FFmpegScaleUpscaler.BuildScaleArgs("in.mp4", "out.mp4", scale: 4);
+
+        Assert.Contains("scale=trunc(iw*4/2)*2:trunc(ih*4/2)*2:flags=lanczos", a);
+    }
+
+    // --- RecipeMapper: round-trip апскейлу через JSON ---
+
+    [Fact]
+    public void RecipeMapper_round_trip_зберігає_апскейл()
+    {
+        var upscale = new UpscaleSettings { Enabled = true, Provider = "ffmpeg-scale", Scale = 4 };
+
+        var recipe = RecipeMapper.ToRecipe(
+            "test", "720p", new CutSettings(), upscale, new AssembleSettings());
+
+        var opts = new System.Text.Json.JsonSerializerOptions
+        {
+            PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase
+        };
+        var json = System.Text.Json.JsonSerializer.Serialize(recipe, opts);
+        var loaded = System.Text.Json.JsonSerializer.Deserialize<Recipe>(json, opts)!;
+
+        var r = RecipeMapper.ReadUpscaleSettings(loaded);
+
+        Assert.True(r.Enabled);
+        Assert.Equal("ffmpeg-scale", r.Provider);
+        Assert.Equal(4, r.Scale);
+    }
+
+    [Fact]
+    public void RecipeMapper_апскейл_відсутній_крок_дає_вимкнено()
+    {
+        // Старий рецепт без кроку upscale → дефолти UpscaleSettings (Enabled=false).
+        var recipe = new Recipe
+        {
+            Name = "legacy",
+            Steps = { new RecipeStep { TypeId = "cut", Settings = { ["mode"] = "random" } } }
+        };
+
+        var r = RecipeMapper.ReadUpscaleSettings(recipe);
+
+        Assert.False(r.Enabled);
+        Assert.Equal(new UpscaleSettings().Scale, r.Scale);
     }
 
     private static PipelineContext MakeContext(string ytDlpPath) => new()

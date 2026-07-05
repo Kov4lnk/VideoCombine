@@ -1,6 +1,7 @@
 namespace VideoCombine.Core.Recipes;
 
 using System.Text.Json;
+using VideoCombine.Core.Providers;
 using VideoCombine.Core.Steps;
 
 /// <summary>
@@ -18,13 +19,17 @@ public static class RecipeMapper
     // TypeId кроків — мають збігатися з IStep.TypeId відповідних кроків.
     private const string Download = "download";
     private const string Cut = "cut";
+    private const string Upscale = "upscale";
     private const string Assemble = "assemble";
 
     /// <summary>
     /// Збирає рецепт із поточних налаштувань. Кроки Завантаження/Аналіз/Нарізка/
-    /// Склейка — фіксований ланцюг відеогілки (Аналіз без налаштувань, тож порожній).
+    /// Апскейл/Склейка. Апскейл ОПЦІЙНИЙ (upscale.Enabled) — у рецепт пишемо завжди,
+    /// з прапорцем enabled, щоб вибір зберігався; чи вставляти крок у ланцюг,
+    /// вирішує виконавець. Аналіз без налаштувань, тож порожній.
     /// </summary>
-    public static Recipe ToRecipe(string name, string quality, CutSettings cut, AssembleSettings assemble) => new()
+    public static Recipe ToRecipe(
+        string name, string quality, CutSettings cut, UpscaleSettings upscale, AssembleSettings assemble) => new()
     {
         Name = name,
         StartBranch = "video",
@@ -40,6 +45,16 @@ public static class RecipeMapper
                     ["mode"] = cut.Mode,
                     ["minSec"] = cut.MinSec,
                     ["maxSec"] = cut.MaxSec
+                }
+            },
+            new RecipeStep
+            {
+                TypeId = Upscale,
+                Settings =
+                {
+                    ["enabled"] = upscale.Enabled,
+                    ["provider"] = upscale.Provider,
+                    ["scale"] = upscale.Scale
                 }
             },
             new RecipeStep
@@ -81,6 +96,19 @@ public static class RecipeMapper
             Mode = ReadString(s, "mode", def.Mode),
             MinSec = ReadDouble(s, "minSec", def.MinSec),
             MaxSec = ReadDouble(s, "maxSec", def.MaxSec)
+        };
+    }
+
+    /// <summary>Налаштування апскейлу з рецепта; відсутні ключі → дефолти UpscaleSettings.</summary>
+    public static UpscaleSettings ReadUpscaleSettings(Recipe recipe)
+    {
+        var s = FindStep(recipe, Upscale)?.Settings;
+        var def = new UpscaleSettings();
+        return new UpscaleSettings
+        {
+            Enabled = ReadBool(s, "enabled", def.Enabled),
+            Provider = ReadString(s, "provider", def.Provider),
+            Scale = ReadInt(s, "scale", def.Scale)
         };
     }
 
@@ -147,6 +175,23 @@ public static class RecipeMapper
             long ll => (int)ll,
             double dd => (int)dd,
             _ => int.TryParse(v.ToString(), out var p) ? p : fallback
+        };
+    }
+
+    private static bool ReadBool(IReadOnlyDictionary<string, object?>? settings, string key, bool fallback)
+    {
+        if (settings is null || !settings.TryGetValue(key, out var v) || v is null) return fallback;
+        if (v is JsonElement je)
+            return je.ValueKind switch
+            {
+                JsonValueKind.True => true,
+                JsonValueKind.False => false,
+                _ => fallback
+            };
+        return v switch
+        {
+            bool b => b,
+            _ => bool.TryParse(v.ToString(), out var p) ? p : fallback
         };
     }
 
