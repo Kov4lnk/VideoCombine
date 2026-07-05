@@ -54,11 +54,18 @@ settings.json
 # Кому треба — створить власний рецепт у застосунку.
 recipes/
 
-# Зовнішні бінарники (ffmpeg / yt-dlp / real-esrgan / whisper) — не в репозиторій
+# Зовнішні бінарники (ffmpeg / yt-dlp / real-esrgan / whisper) — не в репозиторій.
+# Кожен ставить їх локально; шляхи вказуються на табі «Налаштування».
 tools/*.exe
+tools/*.dll
+# whisper.cpp: exe + CUDA/CPU-dll + файли моделей (ggml-*.bin) — усе завантажуване,
+# сотні МБ, не місце в git. Ігноруємо теку цілком.
+tools/whisper/
 ffmpeg.exe
 ffprobe.exe
 yt-dlp.exe
+# Моделі (whisper ggml-*.bin, майбутні real-esrgan тощо) — важкі, завантажувані.
+*.bin
 
 # Кеш згенерованих медіа (локальний, не версіонуємо)
 media-cache/

@@ -51,7 +51,9 @@ public sealed partial class RecipesViewModel : ObservableObject
                 _sources.GetQualityValue(),
                 _builder.BuildCutSettings(),
                 _builder.BuildUpscaleSettings(),
-                _builder.BuildAssembleSettings());
+                _builder.BuildAssembleSettings(),
+                _builder.BuildSubtitleSettings(),
+                _builder.BuildTtsSettings());
 
             await _store.SaveAsync(recipe);
             RefreshList();
@@ -83,7 +85,9 @@ public sealed partial class RecipesViewModel : ObservableObject
             _builder.Apply(
                 RecipeMapper.ReadCutSettings(recipe),
                 RecipeMapper.ReadUpscaleSettings(recipe),
-                RecipeMapper.ReadAssembleSettings(recipe));
+                RecipeMapper.ReadAssembleSettings(recipe),
+                RecipeMapper.ReadSubtitleSettings(recipe),
+                RecipeMapper.ReadTtsSettings(recipe));
 
             RecipeName = recipe.Name;
             Status = $"Завантажено: {recipe.Name}";

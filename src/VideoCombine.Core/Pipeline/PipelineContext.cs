@@ -21,6 +21,14 @@ public sealed class PipelineContext
     /// <summary>Сцени генеративної гілки (storyboard), якщо використовується.</summary>
     public List<Scene> Scenes { get; } = new();
 
+    /// <summary>
+    /// Текст для озвучки (вхід TtsStep). "Труба" під перехід A→Б: зараз порожня —
+    /// у режимі переробки тексту нема; при робочому TTS її наповнить гілка сценарію
+    /// (Фаза E) або ручне поле "встав текст". TtsStep читає звідси й світить
+    /// "нема тексту", поки null.
+    /// </summary>
+    public string? VoiceoverText { get; set; }
+
     /// <summary>Робоча (тимчасова) папка цього прогону.</summary>
     public required string WorkingDirectory { get; init; }
 

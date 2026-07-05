@@ -14,6 +14,12 @@ public sealed class AppSettings
     public string? RealEsrganPath { get; set; }
     public string? WhisperPath { get; set; }
 
+    /// <summary>
+    /// Файл моделі whisper.cpp (напр. ggml-base.bin). whisper.cpp — самодостатній
+    /// exe (як ffmpeg/yt-dlp), але модель лежить окремим файлом і вказується явно.
+    /// </summary>
+    public string? WhisperModelPath { get; set; }
+
     // Ліміти одночасності (розділ 8.3) — розумні дефолти
     public int MaxFfmpegConcurrency { get; set; } = 8;
     public int MaxGpuConcurrency { get; set; } = 2;

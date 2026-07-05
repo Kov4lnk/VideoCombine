@@ -321,7 +321,9 @@ public sealed class StepLogicTests
         };
         var cut = new CutSettings { Mode = "fixed", MinSec = 2, MaxSec = 5 };
 
-        var recipe = RecipeMapper.ToRecipe("test", "720p", cut, new UpscaleSettings(), assemble);
+        var recipe = RecipeMapper.ToRecipe(
+            "test", "720p", cut, new UpscaleSettings(), assemble,
+            new SubtitleSettings(), new TtsSettings());
 
         // Кругообіг через JSON тими самими опціями, що й RecipeStore — після нього
         // значення в Settings вертаються як JsonElement, а не raw int/string.
@@ -402,7 +404,8 @@ public sealed class StepLogicTests
         var upscale = new UpscaleSettings { Enabled = true, Provider = "ffmpeg-scale", Scale = 4 };
 
         var recipe = RecipeMapper.ToRecipe(
-            "test", "720p", new CutSettings(), upscale, new AssembleSettings());
+            "test", "720p", new CutSettings(), upscale, new AssembleSettings(),
+            new SubtitleSettings(), new TtsSettings());
 
         var opts = new System.Text.Json.JsonSerializerOptions
         {
@@ -432,6 +435,148 @@ public sealed class StepLogicTests
 
         Assert.False(r.Enabled);
         Assert.Equal(new UpscaleSettings().Scale, r.Scale);
+    }
+
+    // --- SubtitleStep: аргументи whisper.cpp / витягування wav / burn-in ---
+
+    [Fact]
+    public void BuildExtractWavArgs_16k_mono_pcm_без_відео()
+    {
+        var a = SubtitleStep.BuildExtractWavArgs(@"C:\out\output.mp4", @"C:\work\output_whisper.wav");
+
+        // whisper.cpp очікує саме 16 kHz mono PCM; відео відкидаємо (-vn).
+        Assert.Contains("-vn", a);
+        Assert.Equal("16000", a[a.ToList().IndexOf("-ar") + 1]);
+        Assert.Equal("1", a[a.ToList().IndexOf("-ac") + 1]);
+        Assert.Equal("pcm_s16le", a[a.ToList().IndexOf("-c:a") + 1]);
+        Assert.Equal(@"C:\work\output_whisper.wav", a[^1]);
+    }
+
+    [Fact]
+    public void BuildWhisperArgs_модель_вхід_srt_автомова()
+    {
+        var a = SubtitleStep.BuildWhisperArgs(@"C:\work\a.wav", @"C:\out\output", @"C:\models\ggml-base.bin");
+
+        Assert.Equal(@"C:\models\ggml-base.bin", a[a.ToList().IndexOf("-m") + 1]);
+        Assert.Equal(@"C:\work\a.wav", a[a.ToList().IndexOf("-f") + 1]);
+        // Автовизначення мови й вивід SRT.
+        Assert.Equal("auto", a[a.ToList().IndexOf("-l") + 1]);
+        Assert.Contains("-osrt", a);
+        // -of БЕЗ розширення — whisper.cpp сам допише .srt.
+        Assert.Equal(@"C:\out\output", a[a.ToList().IndexOf("-of") + 1]);
+        Assert.DoesNotContain(".srt", a[a.ToList().IndexOf("-of") + 1]);
+    }
+
+    [Theory]
+    // Windows: \ → /, двокрапка диска екранується для filter-синтаксису ffmpeg.
+    [InlineData(@"C:\out\output.srt", "C\\:/out/output.srt")]
+    [InlineData("/tmp/a.srt", "/tmp/a.srt")]
+    public void EscapeSubtitlesPath_екранує_для_фільтра(string input, string expected)
+    {
+        Assert.Equal(expected, SubtitleStep.EscapeSubtitlesPath(input));
+    }
+
+    [Fact]
+    public void BuildBurnInArgs_вписує_субтитри_екранованим_шляхом()
+    {
+        var a = SubtitleStep.BuildBurnInArgs(@"C:\out\output.mp4", @"C:\out\output.srt", @"C:\out\output_sub.mp4");
+
+        // Фільтр subtitles= з екранованим шляхом; відео перекодовуємо, аудіо копіюємо.
+        var vf = a[a.ToList().IndexOf("-vf") + 1];
+        Assert.Contains("subtitles='C\\:/out/output.srt'", vf);
+        Assert.Contains("libx264", a);
+        Assert.Equal("copy", a[a.ToList().IndexOf("-c:a") + 1]);
+        Assert.Equal(@"C:\out\output_sub.mp4", a[^1]);
+    }
+
+    // --- SubtitleStep/TtsStep.GetRequirements: блокуючі передумови ---
+
+    [Fact]
+    public void Subtitle_Requirements_без_фіналу_whisper_моделі_блокує()
+    {
+        var step = new SubtitleStep(new ProcessRunner(), new SubtitleSettings { Enabled = true });
+        // Порожній контекст: нема FinalOutputPath, нема whisper/моделі.
+        var ctx = MakeContext(ytDlpPath: "");
+
+        var blocking = step.GetRequirements(ctx).Where(r => r.IsBlocking).ToList();
+
+        // Усі три причини мають підсвітитись (фінал, whisper, модель).
+        Assert.Equal(3, blocking.Count);
+    }
+
+    [Fact]
+    public void Tts_Requirements_без_тексту_блокує()
+    {
+        var step = new TtsStep(new PiperTtsProvider(new ProcessRunner(), "piper"), new TtsSettings { Enabled = true });
+        var ctx = MakeContext(ytDlpPath: ""); // VoiceoverText порожній
+
+        var blocking = step.GetRequirements(ctx).Where(r => r.IsBlocking).ToList();
+
+        // Локальний Piper: єдина причина — нема тексту (ключ не потрібен).
+        Assert.Single(blocking);
+        Assert.Contains(blocking, r => r.Message.Contains("текст", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void Tts_Requirements_хмара_додатково_вимагає_ключа()
+    {
+        var step = new TtsStep(new CloudTtsProvider("elevenlabs"), new TtsSettings { Enabled = true });
+        var ctx = MakeContext(ytDlpPath: "");
+
+        var blocking = step.GetRequirements(ctx).Where(r => r.IsBlocking).ToList();
+
+        // Хмара: нема тексту + нема ключа = дві причини.
+        Assert.Equal(2, blocking.Count);
+        Assert.Contains(blocking, r => r.Message.Contains("ключ", StringComparison.OrdinalIgnoreCase));
+    }
+
+    // --- RecipeMapper: round-trip субтитрів і TTS через JSON ---
+
+    [Fact]
+    public void RecipeMapper_round_trip_зберігає_субтитри_і_tts()
+    {
+        var subtitle = new SubtitleSettings { Enabled = true, BurnIn = true };
+        var tts = new TtsSettings { Enabled = true, Provider = "cloud", VoiceId = "voice-42", Speed = 1.25 };
+
+        var recipe = RecipeMapper.ToRecipe(
+            "test", "720p", new CutSettings(), new UpscaleSettings(), new AssembleSettings(),
+            subtitle, tts);
+
+        var opts = new System.Text.Json.JsonSerializerOptions
+        {
+            PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase
+        };
+        var json = System.Text.Json.JsonSerializer.Serialize(recipe, opts);
+        var loaded = System.Text.Json.JsonSerializer.Deserialize<Recipe>(json, opts)!;
+
+        var s = RecipeMapper.ReadSubtitleSettings(loaded);
+        Assert.True(s.Enabled);
+        Assert.True(s.BurnIn);
+
+        var t = RecipeMapper.ReadTtsSettings(loaded);
+        Assert.True(t.Enabled);
+        Assert.Equal("cloud", t.Provider);
+        Assert.Equal("voice-42", t.VoiceId);
+        Assert.Equal(1.25, t.Speed, precision: 3);
+    }
+
+    [Fact]
+    public void RecipeMapper_субтитри_tts_відсутні_кроки_дають_дефолти()
+    {
+        // Старий рецепт без кроків subtitle/tts → дефолти (вимкнено).
+        var recipe = new Recipe
+        {
+            Name = "legacy",
+            Steps = { new RecipeStep { TypeId = "cut", Settings = { ["mode"] = "random" } } }
+        };
+
+        var s = RecipeMapper.ReadSubtitleSettings(recipe);
+        var t = RecipeMapper.ReadTtsSettings(recipe);
+
+        Assert.False(s.Enabled);
+        Assert.False(s.BurnIn);
+        Assert.False(t.Enabled);
+        Assert.Equal(new TtsSettings().Provider, t.Provider);
     }
 
     private static PipelineContext MakeContext(string ytDlpPath) => new()

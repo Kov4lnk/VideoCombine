@@ -20,6 +20,8 @@ public static class RecipeMapper
     private const string Download = "download";
     private const string Cut = "cut";
     private const string Upscale = "upscale";
+    private const string Subtitle = "subtitle";
+    private const string Tts = "tts";
     private const string Assemble = "assemble";
 
     /// <summary>
@@ -29,7 +31,8 @@ public static class RecipeMapper
     /// вирішує виконавець. Аналіз без налаштувань, тож порожній.
     /// </summary>
     public static Recipe ToRecipe(
-        string name, string quality, CutSettings cut, UpscaleSettings upscale, AssembleSettings assemble) => new()
+        string name, string quality, CutSettings cut, UpscaleSettings upscale,
+        AssembleSettings assemble, SubtitleSettings subtitle, TtsSettings tts) => new()
     {
         Name = name,
         StartBranch = "video",
@@ -78,6 +81,29 @@ public static class RecipeMapper
                     ["targetFps"] = assemble.TargetFps,
                     ["fitMode"] = assemble.FitMode
                 }
+            },
+            // Хвіст (розділ 3.8/3.6): субтитри й озвучка — опційні кроки після Склейки.
+            // Пишемо завжди з прапорцем enabled, щоб вибір зберігався; вставляти чи ні
+            // в ланцюг — вирішує виконавець (як апскейл).
+            new RecipeStep
+            {
+                TypeId = Subtitle,
+                Settings =
+                {
+                    ["enabled"] = subtitle.Enabled,
+                    ["burnIn"] = subtitle.BurnIn
+                }
+            },
+            new RecipeStep
+            {
+                TypeId = Tts,
+                Settings =
+                {
+                    ["enabled"] = tts.Enabled,
+                    ["provider"] = tts.Provider,
+                    ["voiceId"] = tts.VoiceId,
+                    ["speed"] = tts.Speed
+                }
             }
         }
     };
@@ -109,6 +135,32 @@ public static class RecipeMapper
             Enabled = ReadBool(s, "enabled", def.Enabled),
             Provider = ReadString(s, "provider", def.Provider),
             Scale = ReadInt(s, "scale", def.Scale)
+        };
+    }
+
+    /// <summary>Налаштування субтитрів з рецепта; відсутні ключі → дефолти SubtitleSettings.</summary>
+    public static SubtitleSettings ReadSubtitleSettings(Recipe recipe)
+    {
+        var s = FindStep(recipe, Subtitle)?.Settings;
+        var def = new SubtitleSettings();
+        return new SubtitleSettings
+        {
+            Enabled = ReadBool(s, "enabled", def.Enabled),
+            BurnIn = ReadBool(s, "burnIn", def.BurnIn)
+        };
+    }
+
+    /// <summary>Налаштування озвучки з рецепта; відсутні ключі → дефолти TtsSettings.</summary>
+    public static TtsSettings ReadTtsSettings(Recipe recipe)
+    {
+        var s = FindStep(recipe, Tts)?.Settings;
+        var def = new TtsSettings();
+        return new TtsSettings
+        {
+            Enabled = ReadBool(s, "enabled", def.Enabled),
+            Provider = ReadString(s, "provider", def.Provider),
+            VoiceId = ReadString(s, "voiceId", def.VoiceId),
+            Speed = ReadDouble(s, "speed", def.Speed)
         };
     }
 

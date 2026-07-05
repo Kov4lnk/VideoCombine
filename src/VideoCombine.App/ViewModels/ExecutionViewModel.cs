@@ -217,6 +217,18 @@ public sealed partial class ExecutionViewModel : ObservableObject, IPipelineProg
         }
 
         steps.Add(new AssembleStep(runner, _builder.BuildAssembleSettings()));
+
+        // Субтитри — опційний крок ХВОСТА, після Склейки: whisper.cpp транскрибує
+        // готове фінальне відео (не оригінали — порядок сегментів інший) і кладе .srt
+        // поряд; за burn-in переставляє FinalOutputPath на відео з субтитрами.
+        var subtitle = _builder.BuildSubtitleSettings();
+        if (subtitle.Enabled)
+            steps.Add(new SubtitleStep(runner, subtitle));
+
+        // TTS (Озвучка) свідомо НЕ вставляємо: крок-заглушка без джерела тексту
+        // (гілка "сценарій" — Фаза E) і без сховища ключів. UI видимий, але
+        // заблокований; вставка з'явиться при переході A→Б разом із джерелом тексту.
+
         return steps;
     }
 

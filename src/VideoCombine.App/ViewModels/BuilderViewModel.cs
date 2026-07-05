@@ -56,6 +56,37 @@ public sealed partial class BuilderViewModel : ObservableObject
 
     public IReadOnlyList<int> UpscaleScaleOptions { get; } = new[] { 2, 4 };
 
+    // --- Субтитри (SubtitleStep) — ОПЦІЙНИЙ крок хвоста, РОБОЧИЙ (whisper.cpp) ---
+
+    /// <summary>
+    /// Чи вставляти крок субтитрів у ланцюг. Опційний, як апскейл. Стоїть після
+    /// Склейки: транскрибує фінальне відео (whisper.cpp), кладе .srt поряд.
+    /// </summary>
+    [ObservableProperty] private bool _subtitleEnabled;
+
+    /// <summary>
+    /// true — вписати субтитри в кадр (burn-in) і зробити це відео фінальним;
+    /// false — лишити лише .srt поряд (плеєр вмикає сам).
+    /// </summary>
+    [ObservableProperty] private bool _subtitleBurnIn;
+
+    // --- Озвучка (TtsStep) — ОПЦІЙНИЙ крок, поки ЗАГЛУШКА ---
+    // Форма фінальна, але виконати не можна: нема тексту на вході (гілка сценарію,
+    // Фаза E) і сховища ключів для хмари. UI видимий, але заблокований — щоб місце
+    // під фічу було видно, а перехід A→Б був "під'єднати труби".
+
+    /// <summary>Чи вставляти крок озвучки. Поки завжди лишається false — крок заглушений.</summary>
+    [ObservableProperty] private bool _ttsEnabled;
+
+    /// <summary>Бекенд озвучки: "piper" (локально) | "cloud" (ElevenLabs/OpenAI).</summary>
+    [ObservableProperty] private string _ttsProvider = "piper";
+
+    public IReadOnlyList<ComboOption> TtsProviderOptions { get; } = new[]
+    {
+        new ComboOption("piper", "Piper (локально, безкоштовно)"),
+        new ComboOption("cloud", "Хмара (ElevenLabs / OpenAI)")
+    };
+
     // --- Склейка (AssembleStep) ---
 
     /// <summary>"sequential" (як є) | "random" (перемішати з seed).</summary>
@@ -176,6 +207,24 @@ public sealed partial class BuilderViewModel : ObservableObject
         Scale = UpscaleScale
     };
 
+    /// <summary>Налаштування субтитрів за поточним станом панелі.</summary>
+    public SubtitleSettings BuildSubtitleSettings() => new()
+    {
+        Enabled = SubtitleEnabled,
+        BurnIn = SubtitleBurnIn
+    };
+
+    /// <summary>
+    /// Налаштування озвучки за поточним станом панелі. Enabled поки завжди false —
+    /// крок заглушений до переходу A→Б (нема тексту/ключів). Значення провайдера
+    /// зберігаємо, щоб вибір не губився в рецепті.
+    /// </summary>
+    public TtsSettings BuildTtsSettings() => new()
+    {
+        Enabled = false,
+        Provider = TtsProvider
+    };
+
     /// <summary>Налаштування склейки за поточним станом панелі.</summary>
     public AssembleSettings BuildAssembleSettings()
     {
@@ -204,7 +253,8 @@ public sealed partial class BuilderViewModel : ObservableObject
     /// Заливає налаштування в поля панелі (завантаження рецепта). Зворотне до
     /// BuildCutSettings/BuildUpscaleSettings/BuildAssembleSettings. Прив'язки оновлять UI самі.
     /// </summary>
-    public void Apply(CutSettings cut, UpscaleSettings upscale, AssembleSettings assemble)
+    public void Apply(CutSettings cut, UpscaleSettings upscale, AssembleSettings assemble,
+        SubtitleSettings subtitle, TtsSettings tts)
     {
         CutMode = cut.Mode;
         CutMinSec = cut.MinSec;
@@ -212,6 +262,12 @@ public sealed partial class BuilderViewModel : ObservableObject
 
         UpscaleEnabled = upscale.Enabled;
         UpscaleScale = upscale.Scale;
+
+        SubtitleEnabled = subtitle.Enabled;
+        SubtitleBurnIn = subtitle.BurnIn;
+
+        TtsEnabled = tts.Enabled;
+        TtsProvider = tts.Provider;
 
         AssembleOrder = assemble.Order;
         // UseNvenc ПЕРШИМ: його OnChanged скидає EncodePreset у дефолт шкали — далі

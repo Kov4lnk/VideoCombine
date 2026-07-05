@@ -29,6 +29,8 @@ public sealed partial class SettingsViewModel : ObservableObject
         _ffmpegPath = _settings.FfmpegPath;
         _ffprobePath = _settings.FfprobePath;
         _ytDlpPath = _settings.YtDlpPath;
+        _whisperPath = _settings.WhisperPath ?? "";
+        _whisperModelPath = _settings.WhisperModelPath ?? "";
         _workingRoot = _settings.WorkingRoot;
         _outputRoot = _settings.OutputRoot;
     }
@@ -36,6 +38,10 @@ public sealed partial class SettingsViewModel : ObservableObject
     [ObservableProperty] private string _ffmpegPath;
     [ObservableProperty] private string _ffprobePath;
     [ObservableProperty] private string _ytDlpPath;
+    // Whisper (субтитри) — exe (whisper.cpp) + файл моделі (ggml-*.bin). Опційні:
+    // потрібні лише коли ввімкнено крок субтитрів, тож порожні тут — не помилка прогону.
+    [ObservableProperty] private string _whisperPath;
+    [ObservableProperty] private string _whisperModelPath;
     [ObservableProperty] private string _workingRoot;
     [ObservableProperty] private string _outputRoot;
 
@@ -53,6 +59,13 @@ public sealed partial class SettingsViewModel : ObservableObject
     public Brush FfprobeStatusColor => ToolColor(FfprobePath);
     public string YtDlpStatus => ToolStatus(YtDlpPath);
     public Brush YtDlpStatusColor => ToolColor(YtDlpPath);
+    // Whisper exe опційний: без нього просто не ввімкнеш субтитри — тож порожньо
+    // НЕ червоне (на відміну від обов'язкових ffmpeg/yt-dlp), а нейтральна підказка.
+    public string WhisperStatus => OptionalToolStatus(WhisperPath);
+    public Brush WhisperStatusColor => OptionalToolColor(WhisperPath);
+    // Модель — конкретний файл (ggml-*.bin), не команда в PATH: перевіряємо File.Exists.
+    public string WhisperModelStatus => FileStatus(WhisperModelPath);
+    public Brush WhisperModelStatusColor => FileColor(WhisperModelPath);
 
     public string WorkingStatus => FolderStatus(WorkingRoot);
     public Brush WorkingStatusColor => FolderColor(WorkingRoot);
@@ -67,6 +80,17 @@ public sealed partial class SettingsViewModel : ObservableObject
     private static Brush ToolColor(string path) =>
         ToolChecker.ToolPresent(path) ? Brushes.SeaGreen : Brushes.Firebrick;
 
+    // Як ToolStatus, але порожньо — нейтрально (інструмент опційний, напр. whisper).
+    private static string OptionalToolStatus(string path) =>
+        string.IsNullOrWhiteSpace(path) ? "не вказано (потрібен для субтитрів)"
+        : ToolChecker.ToolPresent(path) ? "✓ знайдено"
+        : "✕ не знайдено";
+
+    private static Brush OptionalToolColor(string path) =>
+        string.IsNullOrWhiteSpace(path) ? Brushes.Gray
+        : ToolChecker.ToolPresent(path) ? Brushes.SeaGreen
+        : Brushes.Firebrick;
+
     private static string FolderStatus(string path) =>
         string.IsNullOrWhiteSpace(path) ? "✕ не вказано"
         : Directory.Exists(path) ? "✓ існує"
@@ -76,6 +100,18 @@ public sealed partial class SettingsViewModel : ObservableObject
         string.IsNullOrWhiteSpace(path) ? Brushes.Firebrick
         : Directory.Exists(path) ? Brushes.SeaGreen
         : Brushes.Gray;
+
+    // Для необов'язкового файлу (модель Whisper): порожньо — нейтрально (крок просто
+    // не ввімкнеш), вказано+існує — зелено, вказано+нема — червоно.
+    private static string FileStatus(string path) =>
+        string.IsNullOrWhiteSpace(path) ? "не вказано (потрібна для субтитрів)"
+        : File.Exists(path) ? "✓ знайдено"
+        : "✕ не знайдено";
+
+    private static Brush FileColor(string path) =>
+        string.IsNullOrWhiteSpace(path) ? Brushes.Gray
+        : File.Exists(path) ? Brushes.SeaGreen
+        : Brushes.Firebrick;
 
     // Поле шляху змінилось → оновити його статус-значок (генеровані OnXxxChanged).
     partial void OnFfmpegPathChanged(string value)
@@ -94,6 +130,18 @@ public sealed partial class SettingsViewModel : ObservableObject
     {
         OnPropertyChanged(nameof(YtDlpStatus));
         OnPropertyChanged(nameof(YtDlpStatusColor));
+    }
+
+    partial void OnWhisperPathChanged(string value)
+    {
+        OnPropertyChanged(nameof(WhisperStatus));
+        OnPropertyChanged(nameof(WhisperStatusColor));
+    }
+
+    partial void OnWhisperModelPathChanged(string value)
+    {
+        OnPropertyChanged(nameof(WhisperModelStatus));
+        OnPropertyChanged(nameof(WhisperModelStatusColor));
     }
 
     partial void OnWorkingRootChanged(string value)
@@ -116,6 +164,8 @@ public sealed partial class SettingsViewModel : ObservableObject
             _settings.FfmpegPath = FfmpegPath.Trim();
             _settings.FfprobePath = FfprobePath.Trim();
             _settings.YtDlpPath = YtDlpPath.Trim();
+            _settings.WhisperPath = NullIfBlank(WhisperPath);
+            _settings.WhisperModelPath = NullIfBlank(WhisperModelPath);
             _settings.WorkingRoot = WorkingRoot.Trim();
             _settings.OutputRoot = OutputRoot.Trim();
 
@@ -142,6 +192,12 @@ public sealed partial class SettingsViewModel : ObservableObject
     private void BrowseYtDlp() => YtDlpPath = PickExe("Виберіть yt-dlp.exe", YtDlpPath) ?? YtDlpPath;
 
     [RelayCommand]
+    private void BrowseWhisper() => WhisperPath = PickExe("Виберіть whisper.cpp (main.exe / whisper-cli.exe)", WhisperPath) ?? WhisperPath;
+
+    [RelayCommand]
+    private void BrowseWhisperModel() => WhisperModelPath = PickModel("Виберіть модель Whisper (ggml-*.bin)", WhisperModelPath) ?? WhisperModelPath;
+
+    [RelayCommand]
     private void BrowseWorking() => WorkingRoot = PickFolder("Виберіть робочу папку", WorkingRoot) ?? WorkingRoot;
 
     [RelayCommand]
@@ -154,6 +210,19 @@ public sealed partial class SettingsViewModel : ObservableObject
         {
             Title = title,
             Filter = "Програми (*.exe)|*.exe|Усі файли (*.*)|*.*",
+            CheckFileExists = true
+        };
+        SetInitialDir(d => dlg.InitialDirectory = d, current, isFile: true);
+        return dlg.ShowDialog() == true ? dlg.FileName : null;
+    }
+
+    /// <summary>Діалог вибору файлу моделі Whisper (ggml-*.bin). Стартує з теки поточного значення.</summary>
+    private static string? PickModel(string title, string current)
+    {
+        var dlg = new OpenFileDialog
+        {
+            Title = title,
+            Filter = "Моделі Whisper (*.bin)|*.bin|Усі файли (*.*)|*.*",
             CheckFileExists = true
         };
         SetInitialDir(d => dlg.InitialDirectory = d, current, isFile: true);
@@ -177,12 +246,18 @@ public sealed partial class SettingsViewModel : ObservableObject
             set(dir);
     }
 
+    /// <summary>Порожнє поле → null (опційні шляхи Whisper зберігаємо як null, не "").</summary>
+    private static string? NullIfBlank(string value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
     /// <summary>Поточні налаштування для побудови пайплайну (читає Виконання).</summary>
     public AppSettings ToAppSettings()
     {
         _settings.FfmpegPath = FfmpegPath.Trim();
         _settings.FfprobePath = FfprobePath.Trim();
         _settings.YtDlpPath = YtDlpPath.Trim();
+        _settings.WhisperPath = NullIfBlank(WhisperPath);
+        _settings.WhisperModelPath = NullIfBlank(WhisperModelPath);
         _settings.WorkingRoot = WorkingRoot.Trim();
         _settings.OutputRoot = OutputRoot.Trim();
         return _settings;

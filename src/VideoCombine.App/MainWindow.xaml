@@ -262,6 +262,47 @@
                             <TextBlock Margin="8,4,0,0" Foreground="Gray" FontSize="11" TextWrapping="Wrap"
                                        Text="NVENC ~3x швидше за CPU; якщо GPU недоступний — автоматичний відкат на CPU (libx264)." />
 
+                            <Separator Margin="0,14" />
+
+                            <!-- Звук і мовлення: субтитри (робочі, whisper.cpp) + озвучка (заглушка) -->
+                            <TextBlock Text="🎙 Звук і мовлення" FontWeight="SemiBold" FontSize="14" Margin="0,4,0,6" />
+                            <StackPanel Margin="8,0,0,0">
+
+                                <!-- Субтитри (SubtitleStep) — РОБОЧИЙ опційний крок хвоста -->
+                                <TextBlock Text="Субтитри (Whisper)" FontWeight="SemiBold" Margin="0,0,0,4" />
+                                <CheckBox IsChecked="{Binding SubtitleEnabled}"
+                                          Content="Розпізнати мовлення й зробити субтитри" />
+                                <StackPanel Margin="0,6,0,0" IsEnabled="{Binding SubtitleEnabled}">
+                                    <CheckBox IsChecked="{Binding SubtitleBurnIn}"
+                                              Content="Вписати субтитри в кадр (burn-in)" />
+                                    <TextBlock Foreground="Gray" FontSize="11" TextWrapping="Wrap" Margin="0,2,0,0"
+                                               Text="whisper.cpp транскрибує ФІНАЛЬНЕ відео, кладе .srt поряд. Мова — автовизначення. Burn-in додатково вписує субтитри в кадр (окремий файл _sub). Потрібні шлях до whisper і модель — таб «Налаштування»." />
+                                </StackPanel>
+
+                                <!-- Озвучка (TtsStep) — ЗАГЛУШКА: видима, але заблокована -->
+                                <TextBlock Text="Озвучка (TTS)" FontWeight="SemiBold" Margin="0,12,0,4" />
+                                <Border Background="#F5F5F5" BorderBrush="#E0E0E0" BorderThickness="1"
+                                        CornerRadius="3" Padding="8" IsEnabled="False" Opacity="0.7">
+                                    <StackPanel>
+                                        <CheckBox IsChecked="{Binding TtsEnabled}"
+                                                  Content="Озвучити текст голосом" />
+                                        <Grid Margin="0,6,0,0">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="110" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Grid.Column="0" Text="Провайдер:" VerticalAlignment="Center" Margin="0,3" />
+                                            <ComboBox Grid.Column="1" Margin="0,3" HorizontalAlignment="Left" Width="220"
+                                                      ItemsSource="{Binding TtsProviderOptions}"
+                                                      DisplayMemberPath="Label" SelectedValuePath="Key"
+                                                      SelectedValue="{Binding TtsProvider}" />
+                                        </Grid>
+                                    </StackPanel>
+                                </Border>
+                                <TextBlock Foreground="#B08000" FontSize="11" TextWrapping="Wrap" Margin="0,3,0,0"
+                                           Text="⚠ Скоро: озвучці потрібен текст (з гілки «сценарій», пізніша фаза) і сховище API-ключів. Основу закладено, крок поки не виконується." />
+                            </StackPanel>
+
                         </StackPanel>
                     </ScrollViewer>
                 </DockPanel>
@@ -329,7 +370,7 @@
                     </Border>
 
                     <TextBlock Grid.Row="4" Margin="0,6,0,0" Foreground="Gray" FontSize="11"
-                               Text="Ланцюг: Завантаження → Аналіз → Нарізка → [Апскейл] → Склейка. Апскейл — лише якщо увімкнено. Налаштування кроків — на табі «Конструктор»." />
+                               Text="Ланцюг: Завантаження → Аналіз → Нарізка → [Апскейл] → Склейка → [Субтитри]. У квадратних дужках — опційні кроки (лише якщо увімкнено). Налаштування кроків — на табі «Конструктор»." />
                 </Grid>
             </TabItem>
             <TabItem Header="Налаштування">
@@ -349,6 +390,8 @@
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
                             <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
                                 <RowDefinition Height="Auto" />
                                 <RowDefinition Height="Auto" />
                                 <RowDefinition Height="Auto" />
@@ -376,6 +419,25 @@
                             <Button Grid.Row="2" Grid.Column="2" Content="Огляд…" Width="70" Margin="6,3,0,3"
                                     Command="{Binding BrowseYtDlpCommand}" />
                             <TextBlock Grid.Row="2" Grid.Column="3" Text="{Binding YtDlpStatus}" Foreground="{Binding YtDlpStatusColor}"
+                                       VerticalAlignment="Center" Margin="8,3,0,3" />
+
+                            <!-- Whisper (субтитри): exe whisper.cpp + файл моделі. Опційні — без них лише не ввімкнеш субтитри. -->
+                            <TextBlock Grid.Row="3" Grid.Column="0" Text="whisper:" VerticalAlignment="Center" Margin="0,3" />
+                            <TextBox Grid.Row="3" Grid.Column="1" Margin="0,3"
+                                     Text="{Binding WhisperPath, UpdateSourceTrigger=PropertyChanged}"
+                                     ToolTip="whisper.cpp (main.exe / whisper-cli.exe) — для субтитрів. Необов'язковий." />
+                            <Button Grid.Row="3" Grid.Column="2" Content="Огляд…" Width="70" Margin="6,3,0,3"
+                                    Command="{Binding BrowseWhisperCommand}" />
+                            <TextBlock Grid.Row="3" Grid.Column="3" Text="{Binding WhisperStatus}" Foreground="{Binding WhisperStatusColor}"
+                                       VerticalAlignment="Center" Margin="8,3,0,3" />
+
+                            <TextBlock Grid.Row="4" Grid.Column="0" Text="модель:" VerticalAlignment="Center" Margin="0,3" />
+                            <TextBox Grid.Row="4" Grid.Column="1" Margin="0,3"
+                                     Text="{Binding WhisperModelPath, UpdateSourceTrigger=PropertyChanged}"
+                                     ToolTip="Файл моделі Whisper (напр. ggml-base.bin). Завантажується окремо." />
+                            <Button Grid.Row="4" Grid.Column="2" Content="Огляд…" Width="70" Margin="6,3,0,3"
+                                    Command="{Binding BrowseWhisperModelCommand}" />
+                            <TextBlock Grid.Row="4" Grid.Column="3" Text="{Binding WhisperModelStatus}" Foreground="{Binding WhisperModelStatusColor}"
                                        VerticalAlignment="Center" Margin="8,3,0,3" />
                         </Grid>
 

@@ -57,6 +57,26 @@ public sealed class SettingsStore
             s.FfprobePath = Env("VC_FFPROBE", @"C:\ffmpeg\bin\ffprobe.exe");
         if (IsBlank(s.YtDlpPath) || s.YtDlpPath == "yt-dlp")
             s.YtDlpPath = Env("VC_YTDLP", Path.Combine(ProjectPaths.ToolsDir, "yt-dlp.exe"));
+
+        // Whisper (субтитри) — ОПЦІЙНИЙ. На відміну від yt-dlp/ffmpeg, дефолт із
+        // tools/whisper/ підставляємо ЛИШЕ якщо файли реально там: на машині без
+        // whisper поле має лишитись порожнім (нейтральний статус у UI), а не вказувати
+        // на неіснуючий шлях червоним. Env-змінні мають пріоритет, якщо задані.
+        if (IsBlank(s.WhisperPath))
+        {
+            var envWhisper = Environment.GetEnvironmentVariable("VC_WHISPER");
+            var defWhisper = Path.Combine(ProjectPaths.ToolsDir, "whisper", "whisper-cli.exe");
+            if (!IsBlank(envWhisper)) s.WhisperPath = envWhisper;
+            else if (File.Exists(defWhisper)) s.WhisperPath = defWhisper;
+        }
+        if (IsBlank(s.WhisperModelPath))
+        {
+            var envModel = Environment.GetEnvironmentVariable("VC_WHISPER_MODEL");
+            var defModel = Path.Combine(ProjectPaths.ToolsDir, "whisper", "models", "ggml-small.bin");
+            if (!IsBlank(envModel)) s.WhisperModelPath = envModel;
+            else if (File.Exists(defModel)) s.WhisperModelPath = defModel;
+        }
+
         if (IsBlank(s.WorkingRoot))
             s.WorkingRoot = Env("VC_WORK", ProjectPaths.WorkDir);
         if (IsBlank(s.OutputRoot))

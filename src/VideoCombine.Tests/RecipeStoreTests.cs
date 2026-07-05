@@ -49,7 +49,9 @@ public sealed class RecipeStoreTests
             quality: "1080p",
             cut: new CutSettings { Mode = "fixed", MinSec = 4, MaxSec = 10 },
             upscale: new UpscaleSettings { Enabled = true, Scale = 2 },
-            assemble: new AssembleSettings { Order = "random", VideoCodec = "nvenc" });
+            assemble: new AssembleSettings { Order = "random", VideoCodec = "nvenc" },
+            subtitle: new SubtitleSettings(),
+            tts: new TtsSettings());
 
         // ...і ганяємо через файл — тут значення стають JsonElement.
         await store.SaveAsync(recipe);
