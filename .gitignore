@@ -42,6 +42,9 @@ output/
 temp/
 
 # API-ключі та секрети — НІКОЛИ не комітимо (розділ 9, 4.3)
+# secrets.dat — захищене сховище ключів (FileSecretStore + DPAPI): зашифроване,
+# машинозалежне, витягу назовні не має бути навіть у зашифрованому вигляді.
+secrets.dat
 *.secrets.json
 secrets.json
 appsettings.secrets.json

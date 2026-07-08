@@ -1,11 +1,14 @@
 namespace VideoCombine.App.ViewModels;
 
+using System.Collections.Generic;
 using System.IO;
 using System.Windows.Media;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Win32;
+using VideoCombine.App.Security;
 using VideoCombine.Core.Models;
+using VideoCombine.Core.Providers;
 
 /// <summary>
 /// Логіка таба «Налаштування» (розділ 4.3): шляхи до зовнішніх інструментів і
@@ -13,17 +16,28 @@ using VideoCombine.Core.Models;
 /// тепер єдине джерело через SettingsStore. Виконання читає збережене звідси.
 ///
 /// Ліміти одночасності й LLM-провайдер поки лише показуємо як довідку (редагування
-/// додамо, коли болітиме). API-ключі тут не живуть — окрема захищена тема.
+/// додамо, коли болітиме).
+///
+/// API-ключі (ElevenLabs/OpenAI/Anthropic — розділ 3.6/3.11) живуть у захищеному
+/// ISecretStore, ОКРЕМО від settings.json і рецептів (щоб рецепт можна було класти
+/// в Git без витоку — розділ 9). У VM тримаємо лише СТАТУС «встановлено/порожньо»,
+/// а не самі значення: введення йде через PasswordBox, значення передається в
+/// команду разово й не осідає полем ObservableProperty.
 /// </summary>
 public sealed partial class SettingsViewModel : ObservableObject
 {
     private readonly SettingsStore _store;
     private readonly AppSettings _settings;
+    private readonly ISecretStore _secrets;
 
     public SettingsViewModel()
     {
         _store = new SettingsStore();
         _settings = _store.LoadOrDefault();
+
+        // Сховище API-ключів: портативний FileSecretStore + DPAPI-протектор (Windows).
+        // Core знає лише інтерфейс; конкретну реалізацію підсовує App (розділ 6/9).
+        _secrets = new FileSecretStore(ProjectPaths.SecretsFile, new DpapiSecretProtector());
 
         // Розкладаємо у поля для прив'язки.
         _ffmpegPath = _settings.FfmpegPath;
@@ -33,6 +47,9 @@ public sealed partial class SettingsViewModel : ObservableObject
         _whisperModelPath = _settings.WhisperModelPath ?? "";
         _workingRoot = _settings.WorkingRoot;
         _outputRoot = _settings.OutputRoot;
+
+        // Початковий стан «встановлено/порожньо» для кожного ключа (значення не читаємо).
+        RefreshKeyStatuses();
     }
 
     [ObservableProperty] private string _ffmpegPath;
@@ -249,6 +266,68 @@ public sealed partial class SettingsViewModel : ObservableObject
     /// <summary>Порожнє поле → null (опційні шляхи Whisper зберігаємо як null, не "").</summary>
     private static string? NullIfBlank(string value) =>
         string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    // --- API-ключі (розділ 9 / 4.3) ---
+    // Ключі живуть у захищеному сховищі (FileSecretStore + DPAPI), НЕ в settings.json
+    // і НЕ в рецептах. VM тримає лише СТАТУС «встановлено/порожньо», ніколи не саме
+    // значення: введене з PasswordBox передається разово в команду й одразу зникає.
+    // Кожен рядок — окрема ApiKeyViewModel; додати провайдера = один запис у списку.
+
+    /// <summary>Рядки ключів для UI (ElevenLabs / OpenAI / Anthropic).</summary>
+    public IReadOnlyList<ApiKeyViewModel> ApiKeys { get; } = new List<ApiKeyViewModel>
+    {
+        new("elevenlabs", "ElevenLabs (озвучка)"),
+        new("openai",     "OpenAI (GPT / TTS)"),
+        new("anthropic",  "Anthropic (Claude)"),
+    };
+
+    /// <summary>Оновити «встановлено/порожньо» для всіх ключів (значень не читаємо).</summary>
+    private async void RefreshKeyStatuses()
+    {
+        var present = await _secrets.ListKeysAsync();
+        var set = new HashSet<string>(present);
+        foreach (var k in ApiKeys)
+            k.SetPresent(set.Contains(k.Key));
+    }
+
+    /// <summary>Зберегти введений ключ у сховище. value приходить із PasswordBox разово.</summary>
+    [RelayCommand]
+    private async Task SaveKey((ApiKeyViewModel Row, string Value) arg)
+    {
+        var value = arg.Value?.Trim() ?? "";
+        if (value.Length == 0)
+        {
+            Status = $"Порожнє значення — ключ «{arg.Row.DisplayName}» не змінено.";
+            return;
+        }
+
+        try
+        {
+            await _secrets.SetAsync(arg.Row.Key, value);
+            arg.Row.SetPresent(true);
+            Status = $"Ключ «{arg.Row.DisplayName}» збережено.";
+        }
+        catch (Exception ex)
+        {
+            Status = $"Не вдалось зберегти ключ: {ex.Message}";
+        }
+    }
+
+    /// <summary>Стерти ключ зі сховища.</summary>
+    [RelayCommand]
+    private async Task ClearKey(ApiKeyViewModel row)
+    {
+        try
+        {
+            await _secrets.DeleteAsync(row.Key);
+            row.SetPresent(false);
+            Status = $"Ключ «{row.DisplayName}» стерто.";
+        }
+        catch (Exception ex)
+        {
+            Status = $"Не вдалось стерти ключ: {ex.Message}";
+        }
+    }
 
     /// <summary>Поточні налаштування для побудови пайплайну (читає Виконання).</summary>
     public AppSettings ToAppSettings()

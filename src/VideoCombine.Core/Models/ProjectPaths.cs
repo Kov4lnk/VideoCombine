@@ -23,6 +23,13 @@ public static class ProjectPaths
     /// <summary>Файл глобальних налаштувань (машинозалежний, у .gitignore).</summary>
     public static string SettingsFile => Path.Combine(RepoRoot, "settings.json");
 
+    /// <summary>
+    /// Файл захищеного сховища API-ключів (ISecretStore). Значення зашифровані
+    /// (DPAPI на Windows), окремо від settings.json і рецептів — у .gitignore,
+    /// у репозиторій не потрапляє (розділ 9 / 4.3).
+    /// </summary>
+    public static string SecretsFile => Path.Combine(RepoRoot, "secrets.dat");
+
     private static string FindRepoRoot()
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);

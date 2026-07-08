@@ -2,6 +2,7 @@ namespace VideoCombine.App;
 
 using System.Linq;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Input;
 using VideoCombine.App.ViewModels;
 
@@ -52,5 +53,21 @@ public partial class MainWindow : Window
         // DataContext таба «Джерела» — SourcesViewModel.
         if ((sender as FrameworkElement)?.DataContext is SourcesViewModel vm)
             vm.AddLocalFiles(paths.Where(System.IO.File.Exists));
+    }
+
+    // --- Збереження API-ключа з PasswordBox ---
+    // PasswordBox.Password СВІДОМО не біндиться: WPF тримає пароль захищено в пам'яті
+    // й не дає прив'язати його до звичайної рядкової властивості VM. Тому значення
+    // читаємо тут разово, віддаємо команді через кортеж (рядок ключа + значення) і
+    // одразу чистимо поле — секрет не осідає ні у VM, ні на екрані.
+    private void SaveApiKey_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement fe) return;
+        if (fe.DataContext is not ApiKeyViewModel row) return;
+        if (fe.Tag is not PasswordBox box) return;          // кнопка вказує на свій PasswordBox через Tag
+        if (DataContext is not MainViewModel main) return;
+
+        main.Settings.SaveKeyCommand.Execute((row, box.Password));
+        box.Clear();                                        // секрет не лишається в UI
     }
 }
