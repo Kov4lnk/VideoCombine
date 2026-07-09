@@ -5,9 +5,16 @@ using VideoCombine.Core.Models;
 using VideoCombine.Core.Pipeline;
 
 /// <summary>
-/// ПРИКЛАД ПОВНОЦІННОГО КРОКУ. Ріже кожне джерело на сегменти.
+/// ПРИКЛАД ПОВНОЦІННОГО КРОКУ. Ріже джерела на сегменти.
 /// Демонструє: звітування прогресу, паралельність УСЕРЕДИНІ кроку з лімітом,
 /// пропуск дрібних збоїв без падіння всього прогону.
+///
+/// Паралельність (розділ 8.2): планування і виконання РОЗДІЛЕНІ. Спершу
+/// PlanCuts однопотоково рахує ВСІ відрізки всіх джерел у плаский список
+/// (тут єдиний Random — тож без гонки). Потім КОЖЕН відрізок — незалежна
+/// ffmpeg-задача, і всі вони йдуть через один спільний семафор. Так повний
+/// паралелізм є і на 30 джерелах×1 сегмент, і на 1 джерелі×30 сегментів
+/// (головний сценарій переробки) — раніше друге різалось послідовно.
 /// </summary>
 public sealed class CutStep : IStep
 {
@@ -36,86 +43,139 @@ public sealed class CutStep : IStep
 
     public async Task ExecuteAsync(PipelineContext context, IProgressReporter progress, CancellationToken token)
     {
-        var limit = Math.Min(MaxConcurrency, context.Settings.MaxFfmpegConcurrency);
+        // Джерела без відомої тривалості нарізати не можна (потрібен Analyze) —
+        // попереджаємо й пропускаємо, решту плануємо.
+        foreach (var s in context.Sources.Where(s => s.Duration is null))
+            progress.Log(LogLevel.Warning, $"{s.Id}: пропущено (невідома тривалість — потрібен аналіз)");
+
+        // Планування однопотокове: єдиний Random не в гонці (був латентний баг —
+        // спільний Random смикався з кількох потоків при паралельних джерелах).
+        var jobs = PlanCuts(context.Sources, _settings, context.WorkingDirectory, new Random());
+        if (jobs.Count == 0)
+            return;
+
+        var limit = Math.Min(MaxConcurrency, Math.Max(1, context.Settings.MaxFfmpegConcurrency));
         using var gate = new SemaphoreSlim(limit);
 
         int done = 0;
-        var total = context.Sources.Count;
-        var rng = new Random();
+        var total = jobs.Count;
+        var produced = new List<Segment>(total);
         var lockObj = new object();
 
-        // Паралельна обробка незалежних джерел із лімітом (розділ 8.2).
-        var tasks = context.Sources.Select(async source =>
+        // ВСІ відрізки — незалежні задачі під спільним лімітом (розділ 8.2).
+        var tasks = jobs.Select(async job =>
         {
             await gate.WaitAsync(token);
             try
             {
-                var produced = await CutOneAsync(source, context, rng, token);
-                lock (lockObj) context.Segments.AddRange(produced);
-                progress.Log(LogLevel.Success, $"{source.Title ?? source.Id}: {produced.Count} сегментів");
+                var args = new[]
+                {
+                    "-ss", job.Start.TotalSeconds.ToString("0.###"),
+                    "-i", job.InputPath,
+                    "-t", job.Length.TotalSeconds.ToString("0.###"),
+                    "-c", "copy", "-y", job.OutputPath
+                };
+
+                var code = await _runner.RunAsync(context.Settings.FfmpegPath, args, null, token);
+                if (code == 0)
+                {
+                    var seg = new Segment
+                    {
+                        Id = job.SegmentId,
+                        FilePath = job.OutputPath,
+                        SourceId = job.SourceId,
+                        Start = job.Start,
+                        Duration = job.Length
+                    };
+                    lock (lockObj) produced.Add(seg);
+                }
+                else
+                {
+                    progress.Log(LogLevel.Warning, $"{job.SegmentId}: пропущено (ffmpeg код {code})");
+                }
             }
             catch (OperationCanceledException) { throw; }
             catch (Exception ex)
             {
-                // Дрібний збій одного джерела — пропускаємо, не валимо прогон (розділ 7.1).
-                progress.Log(LogLevel.Warning, $"{source.Id}: пропущено ({ex.Message})");
+                // Дрібний збій одного відрізка — пропускаємо, не валимо прогон (розділ 7.1).
+                progress.Log(LogLevel.Warning, $"{job.SegmentId}: пропущено ({ex.Message})");
             }
             finally
             {
                 gate.Release();
                 var n = Interlocked.Increment(ref done);
-                progress.ReportStepProgress($"{n}/{total} джерел", (double)n / total);
+                progress.ReportStepProgress($"{n}/{total} сегментів", (double)n / total);
             }
         });
 
         await Task.WhenAll(tasks);
+
+        // Паралельні задачі завершуються врозбій — відновлюємо детермінований
+        // порядок (як у джерелах, усередині — за індексом відрізка), інакше
+        // склейка отримала б перемішані сегменти. Id = "{sourceId}_seg{idx:D4}":
+        // zero-padding робить лексичне порівняння коректним за індексом.
+        var sourceOrder = new Dictionary<string, int>();
+        for (int i = 0; i < context.Sources.Count; i++)
+            sourceOrder[context.Sources[i].Id] = i;
+
+        produced.Sort((a, b) =>
+        {
+            var c = sourceOrder.GetValueOrDefault(a.SourceId).CompareTo(sourceOrder.GetValueOrDefault(b.SourceId));
+            return c != 0 ? c : string.CompareOrdinal(a.Id, b.Id);
+        });
+
+        context.Segments.AddRange(produced);
+        progress.Log(LogLevel.Success, $"Нарізано {produced.Count} сегментів із {context.Sources.Count} джерел");
     }
 
-    private async Task<List<Segment>> CutOneAsync(
-        SourceVideo source, PipelineContext context, Random rng, CancellationToken token)
+    /// <summary>
+    /// Планує всі відрізки всіх джерел у плаский список — ЧИСТА, однопотокова,
+    /// тестована функція. Джерела без Duration пропускає. Random передається
+    /// ззовні: у прогоні — new Random() (нарізка випадкова щоразу), у тестах —
+    /// сідований, для передбачуваності. Винесено окремо й публічно для тесту.
+    /// </summary>
+    public static List<CutJob> PlanCuts(
+        IReadOnlyList<SourceVideo> sources, CutSettings settings, string workingDir, Random rng)
     {
-        var result = new List<Segment>();
-        if (source.Duration is null)
-            throw new InvalidOperationException("невідома тривалість (потрібен аналіз)");
-
-        var pos = TimeSpan.Zero;
-        var end = source.Duration.Value;
-        int idx = 0;
-
-        while (pos < end)
+        var jobs = new List<CutJob>();
+        foreach (var source in sources)
         {
-            token.ThrowIfCancellationRequested();
-            var len = _settings.PickLength(rng);
-            if (pos + len > end) len = end - pos;
+            if (source.Duration is null) continue;
 
-            var outPath = Path.Combine(context.WorkingDirectory, $"{source.Id}_seg{idx:D4}.mp4");
-            var args = new[]
-            {
-                "-ss", pos.TotalSeconds.ToString("0.###"),
-                "-i", source.FilePath,
-                "-t", len.TotalSeconds.ToString("0.###"),
-                "-c", "copy", "-y", outPath
-            };
+            var pos = TimeSpan.Zero;
+            var end = source.Duration.Value;
+            int idx = 0;
 
-            var code = await _runner.RunAsync(context.Settings.FfmpegPath, args, null, token);
-            if (code == 0)
+            while (pos < end)
             {
-                result.Add(new Segment
-                {
-                    Id = $"{source.Id}_seg{idx:D4}",
-                    FilePath = outPath,
-                    SourceId = source.Id,
-                    Start = pos,
-                    Duration = len
-                });
+                var len = settings.PickLength(rng);
+                if (pos + len > end) len = end - pos;
+
+                var id = $"{source.Id}_seg{idx:D4}";
+                jobs.Add(new CutJob(
+                    SourceId: source.Id,
+                    SegmentId: id,
+                    InputPath: source.FilePath,
+                    OutputPath: Path.Combine(workingDir, id + ".mp4"),
+                    Start: pos,
+                    Length: len));
+
+                pos += len;
+                idx++;
             }
-
-            pos += len;
-            idx++;
         }
-        return result;
+        return jobs;
     }
 }
+
+/// <summary>Спланований відрізок нарізки — незалежна одиниця роботи (див. PlanCuts).</summary>
+public readonly record struct CutJob(
+    string SourceId,
+    string SegmentId,
+    string InputPath,
+    string OutputPath,
+    TimeSpan Start,
+    TimeSpan Length);
 
 /// <summary>Налаштування нарізки (серіалізуються в JSON-рецепт).</summary>
 public sealed class CutSettings

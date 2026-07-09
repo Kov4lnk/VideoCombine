@@ -579,6 +579,88 @@ public sealed class StepLogicTests
         Assert.Equal(new TtsSettings().Provider, t.Provider);
     }
 
+    // --- CutStep.PlanCuts: планування відрізків (чиста функція) ---
+
+    [Fact]
+    public void PlanCuts_fixed_дає_рівні_відрізки_із_хвостом()
+    {
+        // 10 с, фіксовано по 3 с → 3+3+3+1 = 4 відрізки (останній коротший).
+        var sources = new[] { Src("s1", 10) };
+        var settings = new CutSettings { Mode = "fixed", MinSec = 3 };
+
+        var jobs = CutStep.PlanCuts(sources, settings, @"C:\work", new Random(1));
+
+        Assert.Equal(4, jobs.Count);
+        Assert.Equal(3.0, jobs[0].Length.TotalSeconds, precision: 3);
+        Assert.Equal(1.0, jobs[^1].Length.TotalSeconds, precision: 3); // хвіст
+        // Сума відрізків == тривалість джерела (нічого не загублено/не додано).
+        Assert.Equal(10.0, jobs.Sum(j => j.Length.TotalSeconds), precision: 3);
+    }
+
+    [Fact]
+    public void PlanCuts_id_zero_padded_і_шлях_у_робочій_папці()
+    {
+        var jobs = CutStep.PlanCuts(new[] { Src("vid", 6) },
+            new CutSettings { Mode = "fixed", MinSec = 3 }, @"C:\work", new Random(1));
+
+        // Id = "{sourceId}_seg{idx:D4}" — zero-padding для коректного лексичного сорту.
+        Assert.Equal("vid_seg0000", jobs[0].SegmentId);
+        Assert.Equal("vid_seg0001", jobs[1].SegmentId);
+        Assert.Equal(@"C:\work\vid_seg0000.mp4", jobs[0].OutputPath);
+        Assert.Equal("vid", jobs[0].SourceId);
+    }
+
+    [Fact]
+    public void PlanCuts_кілька_джерел_плаский_список_у_порядку_джерел()
+    {
+        var jobs = CutStep.PlanCuts(
+            new[] { Src("a", 6), Src("b", 3) },
+            new CutSettings { Mode = "fixed", MinSec = 3 }, @"C:\work", new Random(1));
+
+        // a → 2 відрізки, b → 1; усі в одному плоскому списку, джерела поспіль.
+        Assert.Equal(3, jobs.Count);
+        Assert.Equal(new[] { "a", "a", "b" }, jobs.Select(j => j.SourceId));
+    }
+
+    [Fact]
+    public void PlanCuts_джерело_без_тривалості_пропускається()
+    {
+        var sources = new[]
+        {
+            Src("ok", 6),
+            new SourceVideo { Id = "no-dur", FilePath = @"C:\x.mp4" } // Duration == null
+        };
+
+        var jobs = CutStep.PlanCuts(sources, new CutSettings { Mode = "fixed", MinSec = 3 },
+            @"C:\work", new Random(1));
+
+        // Тільки джерело з відомою тривалістю дало відрізки.
+        Assert.All(jobs, j => Assert.Equal("ok", j.SourceId));
+        Assert.Equal(2, jobs.Count);
+    }
+
+    [Fact]
+    public void PlanCuts_детермінований_за_seed()
+    {
+        var sources = new[] { Src("s", 30) };
+        var settings = new CutSettings { Mode = "random", MinSec = 3, MaxSec = 8 };
+
+        var a = CutStep.PlanCuts(sources, settings, @"C:\work", new Random(42))
+            .Select(j => j.Length.TotalSeconds).ToArray();
+        var b = CutStep.PlanCuts(sources, settings, @"C:\work", new Random(42))
+            .Select(j => j.Length.TotalSeconds).ToArray();
+
+        // Той самий seed → та сама розкладка (нарізка повторювана в тесті).
+        Assert.Equal(a, b);
+    }
+
+    private static SourceVideo Src(string id, double durationSec) => new()
+    {
+        Id = id,
+        FilePath = $@"C:\in\{id}.mp4",
+        Duration = TimeSpan.FromSeconds(durationSec)
+    };
+
     private static PipelineContext MakeContext(string ytDlpPath) => new()
     {
         WorkingDirectory = @"C:\work",
