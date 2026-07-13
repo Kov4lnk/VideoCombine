@@ -66,9 +66,16 @@ public sealed class DownloadStep : IStep
 
         int done = 0;
         var total = _settings.Urls.Count;
-        var lockObj = new object();
 
-        var tasks = _settings.Urls.Select(async url =>
+        // Паралельні задачі фінішують ВРОЗБІЙ — тож не додаємо в Sources у міру
+        // завершення (це дало б випадковий порядок джерел щопрогону, а CutStep
+        // сортує сегменти за індексом джерела → фінальне відео склеювалось би
+        // непередбачувано, навіть у режимі "sequential"). Замість цього кожен
+        // результат кладемо у слот за індексом його URL, а в Sources вливаємо
+        // в порядку списку URL — так "sequential" знову відтворюваний.
+        var slots = new SourceVideo?[total];
+
+        var tasks = _settings.Urls.Select(async (url, i) =>
         {
             await gate.WaitAsync(token);
             try
@@ -76,7 +83,7 @@ public sealed class DownloadStep : IStep
                 var source = await DownloadOneAsync(url, context, progress, token);
                 if (source is not null)
                 {
-                    lock (lockObj) context.Sources.Add(source);
+                    slots[i] = source;
                     progress.Log(LogLevel.Success, $"Завантажено: {source.Title ?? source.Id}");
                 }
             }
@@ -96,6 +103,11 @@ public sealed class DownloadStep : IStep
         });
 
         await Task.WhenAll(tasks);
+
+        // Вливаємо в детермінованому порядку URL (пропущені лишаються null).
+        foreach (var source in slots)
+            if (source is not null)
+                context.Sources.Add(source);
 
         if (context.Sources.Count == 0)
             throw new InvalidOperationException("Жодне джерело не вдалося додати");
