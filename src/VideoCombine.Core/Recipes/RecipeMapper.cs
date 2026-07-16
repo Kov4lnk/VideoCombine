@@ -23,6 +23,7 @@ public static class RecipeMapper
     private const string Subtitle = "subtitle";
     private const string Tts = "tts";
     private const string Assemble = "assemble";
+    private const string Loopify = "loopify";
 
     /// <summary>
     /// Збирає рецепт із поточних налаштувань. Кроки Завантаження/Аналіз/Нарізка/
@@ -32,7 +33,8 @@ public static class RecipeMapper
     /// </summary>
     public static Recipe ToRecipe(
         string name, string quality, CutSettings cut, UpscaleSettings upscale,
-        AssembleSettings assemble, SubtitleSettings subtitle, TtsSettings tts) => new()
+        AssembleSettings assemble, SubtitleSettings subtitle, TtsSettings tts,
+        LoopifySettings loopify) => new()
     {
         Name = name,
         StartBranch = "video",
@@ -104,6 +106,16 @@ public static class RecipeMapper
                     ["voiceId"] = tts.VoiceId,
                     ["speed"] = tts.Speed
                 }
+            },
+            new RecipeStep
+            {
+                TypeId = Loopify,
+                Settings =
+                {
+                    ["enabled"] = loopify.Enabled,
+                    ["mode"] = loopify.Mode,
+                    ["fadeDuration"] = loopify.FadeDuration
+                }
             }
         }
     };
@@ -161,6 +173,19 @@ public static class RecipeMapper
             Provider = ReadString(s, "provider", def.Provider),
             VoiceId = ReadString(s, "voiceId", def.VoiceId),
             Speed = ReadDouble(s, "speed", def.Speed)
+        };
+    }
+
+    /// <summary>Налаштування зациклення з рецепта; відсутні ключі → дефолти LoopifySettings.</summary>
+    public static LoopifySettings ReadLoopifySettings(Recipe recipe)
+    {
+        var s = FindStep(recipe, Loopify)?.Settings;
+        var def = new LoopifySettings();
+        return new LoopifySettings
+        {
+            Enabled = ReadBool(s, "enabled", def.Enabled),
+            Mode = ReadString(s, "mode", def.Mode),
+            FadeDuration = ReadDouble(s, "fadeDuration", def.FadeDuration)
         };
     }
 

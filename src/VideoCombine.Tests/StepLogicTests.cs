@@ -323,7 +323,7 @@ public sealed class StepLogicTests
 
         var recipe = RecipeMapper.ToRecipe(
             "test", "720p", cut, new UpscaleSettings(), assemble,
-            new SubtitleSettings(), new TtsSettings());
+            new SubtitleSettings(), new TtsSettings(), new LoopifySettings());
 
         // Кругообіг через JSON тими самими опціями, що й RecipeStore — після нього
         // значення в Settings вертаються як JsonElement, а не raw int/string.
@@ -405,7 +405,7 @@ public sealed class StepLogicTests
 
         var recipe = RecipeMapper.ToRecipe(
             "test", "720p", new CutSettings(), upscale, new AssembleSettings(),
-            new SubtitleSettings(), new TtsSettings());
+            new SubtitleSettings(), new TtsSettings(), new LoopifySettings());
 
         var opts = new System.Text.Json.JsonSerializerOptions
         {
@@ -540,7 +540,7 @@ public sealed class StepLogicTests
 
         var recipe = RecipeMapper.ToRecipe(
             "test", "720p", new CutSettings(), new UpscaleSettings(), new AssembleSettings(),
-            subtitle, tts);
+            subtitle, tts, new LoopifySettings());
 
         var opts = new System.Text.Json.JsonSerializerOptions
         {
@@ -652,6 +652,142 @@ public sealed class StepLogicTests
 
         // Той самий seed → та сама розкладка (нарізка повторювана в тесті).
         Assert.Equal(a, b);
+    }
+
+    // --- LoopifyStep: аргументи ffmpeg + парсинг SSIM-логу ---
+
+    [Fact]
+    public void BuildCrossfadeArgs_два_входи_той_самий_файл_xfade_acrossfade()
+    {
+        var a = LoopifyStep.BuildCrossfadeArgs("in.mp4", "out.mp4", durationSec: 10, fadeSec: 1);
+
+        // Той самий файл двічі як -i.
+        var inputs = a.Where((_, i) => i > 0 && a[i - 1] == "-i").ToArray();
+        Assert.Equal(2, inputs.Length);
+        Assert.All(inputs, v => Assert.Equal("in.mp4", v));
+        // xfade і acrossfade присутні у filter_complex.
+        var fc = a[a.ToList().IndexOf("-filter_complex") + 1];
+        Assert.Contains("xfade=transition=fade", fc);
+        Assert.Contains("acrossfade=d=", fc);
+        // offset = duration - fade = 9.
+        Assert.Contains("offset=9", fc);
+        Assert.Equal("out.mp4", a[^1]);
+    }
+
+    [Fact]
+    public void BuildCrossfadeArgs_fade_обрізається_до_40_відсотків()
+    {
+        // Якщо fadeSec > 40% тривалості — обрізаємо.
+        var a = LoopifyStep.BuildCrossfadeArgs("in.mp4", "out.mp4", durationSec: 5, fadeSec: 10);
+
+        var fc = a[a.ToList().IndexOf("-filter_complex") + 1];
+        // fade = min(10, 5*0.4) = 2; offset = 5 - 2 = 3.
+        Assert.Contains("duration=2", fc);
+        Assert.Contains("offset=3", fc);
+    }
+
+    [Fact]
+    public void BuildReverseArgs_один_вхід_reverse_areverse_concat()
+    {
+        var a = LoopifyStep.BuildReverseArgs("in.mp4", "out.mp4");
+
+        // Один вхід.
+        Assert.Equal("in.mp4", a[a.ToList().IndexOf("-i") + 1]);
+        var fc = a[a.ToList().IndexOf("-filter_complex") + 1];
+        Assert.Contains("reverse", fc);
+        Assert.Contains("areverse", fc);
+        Assert.Contains("concat=n=2", fc);
+        Assert.Equal("out.mp4", a[^1]);
+    }
+
+    [Fact]
+    public void BuildExtractFirstFrameArgs_vframes_1()
+    {
+        var a = LoopifyStep.BuildExtractFirstFrameArgs("in.mp4", "frame.png");
+
+        Assert.Contains("-vframes", a);
+        Assert.Equal("1", a[a.ToList().IndexOf("-vframes") + 1]);
+        Assert.Equal("frame.png", a[^1]);
+    }
+
+    [Fact]
+    public void BuildTrimArgs_c_copy_до_секунди()
+    {
+        var a = LoopifyStep.BuildTrimArgs("in.mp4", "out.mp4", 7.5);
+
+        Assert.Equal("7.5", a[a.ToList().IndexOf("-t") + 1]);
+        Assert.Contains("copy", a);
+        Assert.Equal("out.mp4", a[^1]);
+    }
+
+    [Theory]
+    [InlineData("n:0 Y:0.98 U:0.97 V:0.96 All:0.97 (2.5)", 0.0, 2.5)]   // абсолютний час = offset + pts
+    [InlineData("n:0 Y:0.70 U:0.70 V:0.70 All:0.70 (2.5)", 0.0, null)]   // нижче порогу 0.85
+    public void FindBestTrimPoint_знаходить_або_повертає_null(
+        string logLine, double offset, double? expected)
+    {
+        var result = LoopifyStep.FindBestTrimPoint(logLine, offset);
+
+        if (expected is null)
+            Assert.Null(result);
+        else
+            Assert.Equal(expected.Value, result!.Value, precision: 3);
+    }
+
+    [Fact]
+    public void FindBestTrimPoint_повертає_кадр_із_найвищим_ssim()
+    {
+        var log = "n:0 Y:0.90 U:0.90 V:0.90 All:0.90 (1.0)\n" +
+                  "n:1 Y:0.97 U:0.97 V:0.97 All:0.97 (2.0)\n" +
+                  "n:2 Y:0.91 U:0.91 V:0.91 All:0.91 (3.0)\n";
+
+        var result = LoopifyStep.FindBestTrimPoint(log, searchOffsetSec: 5.0);
+
+        // Найвищий SSIM = 0.97 у кадрі pts=2.0; абсолютний = 5.0 + 2.0 = 7.0.
+        Assert.NotNull(result);
+        Assert.Equal(7.0, result!.Value, precision: 3);
+    }
+
+    // --- RecipeMapper: round-trip Loopify через JSON ---
+
+    [Fact]
+    public void RecipeMapper_round_trip_зберігає_loopify()
+    {
+        var loopify = new LoopifySettings { Enabled = true, Mode = "reverse", FadeDuration = 2.5 };
+
+        var recipe = RecipeMapper.ToRecipe(
+            "test", "720p", new CutSettings(), new UpscaleSettings(), new AssembleSettings(),
+            new SubtitleSettings(), new TtsSettings(), loopify);
+
+        var opts = new System.Text.Json.JsonSerializerOptions
+        {
+            PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase
+        };
+        var json = System.Text.Json.JsonSerializer.Serialize(recipe, opts);
+        var loaded = System.Text.Json.JsonSerializer.Deserialize<Recipe>(json, opts)!;
+
+        var r = RecipeMapper.ReadLoopifySettings(loaded);
+
+        Assert.True(r.Enabled);
+        Assert.Equal("reverse", r.Mode);
+        Assert.Equal(2.5, r.FadeDuration, precision: 3);
+    }
+
+    [Fact]
+    public void RecipeMapper_loopify_відсутній_крок_дає_дефолти()
+    {
+        var recipe = new Recipe
+        {
+            Name = "legacy",
+            Steps = { new RecipeStep { TypeId = "cut", Settings = { ["mode"] = "random" } } }
+        };
+        var def = new LoopifySettings();
+
+        var r = RecipeMapper.ReadLoopifySettings(recipe);
+
+        Assert.False(r.Enabled);
+        Assert.Equal(def.Mode, r.Mode);
+        Assert.Equal(def.FadeDuration, r.FadeDuration, precision: 3);
     }
 
     private static SourceVideo Src(string id, double durationSec) => new()

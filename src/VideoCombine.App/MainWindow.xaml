@@ -303,6 +303,39 @@
                                            Text="⚠ Скоро: озвучці потрібен текст (з гілки «сценарій», пізніша фаза) і сховище API-ключів. Основу закладено, крок поки не виконується." />
                             </StackPanel>
 
+                            <!-- Зациклення (LoopifyStep) — ОПЦІЙНИЙ крок хвоста -->
+                            <TextBlock Text="🔁 Зациклення" FontWeight="SemiBold" FontSize="14" Margin="0,16,0,6" />
+                            <CheckBox IsChecked="{Binding LoopifyEnabled}" Content="Зробити відео безшовним лупом" Margin="0,0,0,6" />
+                            <StackPanel IsEnabled="{Binding LoopifyEnabled}">
+                                <Grid Margin="0,0,0,4">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="100" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="Режим:" VerticalAlignment="Center" />
+                                    <ComboBox Grid.Column="1"
+                                              ItemsSource="{Binding LoopifyModeOptions}"
+                                              DisplayMemberPath="Display"
+                                              SelectedValuePath="Value"
+                                              SelectedValue="{Binding LoopifyMode}" />
+                                </Grid>
+                                <!-- Тривалість crossfade — актуальна лише для режиму crossfade -->
+                                <Grid Margin="0,0,0,4"
+                                      IsEnabled="{Binding LoopifyMode, Converter={StaticResource EqualToConverter}, ConverterParameter=crossfade}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="100" />
+                                        <ColumnDefinition Width="80" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="Crossfade, с:" VerticalAlignment="Center" />
+                                    <TextBox Grid.Column="1" Margin="0,0,6,0"
+                                             Text="{Binding LoopifyFadeDuration, StringFormat={}{0:0.#}}" />
+                                    <TextBlock Grid.Column="2" Text="(0.5–3 с, дефолт 1 с)" Foreground="Gray" FontSize="11" VerticalAlignment="Center" />
+                                </Grid>
+                                <TextBlock FontSize="11" Foreground="Gray" TextWrapping="Wrap"
+                                           Text="Crossfade — плавний перехід, надійний. Reverse — boomerang (відео+реверс), ідеальний луп. Smart-trim — SSIM-пошук схожого кадру (експерим.)." />
+                            </StackPanel>
+
                         </StackPanel>
                     </ScrollViewer>
                 </DockPanel>

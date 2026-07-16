@@ -229,6 +229,12 @@ public sealed partial class ExecutionViewModel : ObservableObject, IPipelineProg
         // (гілка "сценарій" — Фаза E) і без сховища ключів. UI видимий, але
         // заблокований; вставка з'явиться при переході A→Б разом із джерелом тексту.
 
+        // Зациклення — опційний крок ХВОСТА, після Субтитрів. Бере FinalOutputPath
+        // і перетворює відео на безшовний луп (crossfade / reverse / smart-trim).
+        var loopify = _builder.BuildLoopifySettings();
+        if (loopify.Enabled)
+            steps.Add(new LoopifyStep(runner, loopify));
+
         return steps;
     }
 

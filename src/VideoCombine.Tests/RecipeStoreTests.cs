@@ -51,7 +51,8 @@ public sealed class RecipeStoreTests
             upscale: new UpscaleSettings { Enabled = true, Scale = 2 },
             assemble: new AssembleSettings { Order = "random", VideoCodec = "nvenc" },
             subtitle: new SubtitleSettings(),
-            tts: new TtsSettings());
+            tts: new TtsSettings(),
+            loopify: new LoopifySettings());
 
         // ...і ганяємо через файл — тут значення стають JsonElement.
         await store.SaveAsync(recipe);

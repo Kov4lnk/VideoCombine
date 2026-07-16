@@ -87,6 +87,27 @@ public sealed partial class BuilderViewModel : ObservableObject
         new ComboOption("cloud", "Хмара (ElevenLabs / OpenAI)")
     };
 
+    // --- Зациклення (LoopifyStep) — ОПЦІЙНИЙ крок хвоста ---
+
+    /// <summary>Чи вставляти крок зациклення в ланцюг. Опційний, як субтитри.</summary>
+    [ObservableProperty] private bool _loopifyEnabled;
+
+    /// <summary>
+    /// Режим зациклення: "crossfade" | "reverse" | "smart-trim".
+    /// Crossfade — дефолт (плавний, надійний). Reverse — boomerang. Smart-trim — експериментальний.
+    /// </summary>
+    [ObservableProperty] private string _loopifyMode = "crossfade";
+
+    public IReadOnlyList<ComboOption> LoopifyModeOptions { get; } = new[]
+    {
+        new ComboOption("crossfade", "Crossfade (плавний перехід)"),
+        new ComboOption("reverse",   "Reverse — boomerang (вперед+назад)"),
+        new ComboOption("smart-trim","Smart Trim (SSIM, експеримент.)")
+    };
+
+    /// <summary>Тривалість crossfade у секундах. Актуальна лише для режиму "crossfade".</summary>
+    [ObservableProperty] private double _loopifyFadeDuration = 1.0;
+
     // --- Склейка (AssembleStep) ---
 
     /// <summary>"sequential" (як є) | "random" (перемішати з seed).</summary>
@@ -225,6 +246,14 @@ public sealed partial class BuilderViewModel : ObservableObject
         Provider = TtsProvider
     };
 
+    /// <summary>Налаштування зациклення за поточним станом панелі.</summary>
+    public LoopifySettings BuildLoopifySettings() => new()
+    {
+        Enabled = LoopifyEnabled,
+        Mode = LoopifyMode,
+        FadeDuration = LoopifyFadeDuration
+    };
+
     /// <summary>Налаштування склейки за поточним станом панелі.</summary>
     public AssembleSettings BuildAssembleSettings()
     {
@@ -254,7 +283,7 @@ public sealed partial class BuilderViewModel : ObservableObject
     /// BuildCutSettings/BuildUpscaleSettings/BuildAssembleSettings. Прив'язки оновлять UI самі.
     /// </summary>
     public void Apply(CutSettings cut, UpscaleSettings upscale, AssembleSettings assemble,
-        SubtitleSettings subtitle, TtsSettings tts)
+        SubtitleSettings subtitle, TtsSettings tts, LoopifySettings loopify)
     {
         CutMode = cut.Mode;
         CutMinSec = cut.MinSec;
@@ -268,6 +297,10 @@ public sealed partial class BuilderViewModel : ObservableObject
 
         TtsEnabled = tts.Enabled;
         TtsProvider = tts.Provider;
+
+        LoopifyEnabled = loopify.Enabled;
+        LoopifyMode = loopify.Mode;
+        LoopifyFadeDuration = loopify.FadeDuration;
 
         AssembleOrder = assemble.Order;
         // UseNvenc ПЕРШИМ: його OnChanged скидає EncodePreset у дефолт шкали — далі
