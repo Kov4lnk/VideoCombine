@@ -11,6 +11,13 @@ public sealed class SourceVideo
     public int? Width { get; set; }
     public int? Height { get; set; }
     public double? Fps { get; set; }
+    /// <summary>
+    /// Чи є у файлі аудіодоріжка. Заповнює AnalyzeStep (ffprobe). null — ще не
+    /// аналізували; тоді вважаємо, що звук Є (так було до появи цього поля).
+    /// Потрібно склейці: німі джерела (стоки, AI-кліпи, запис екрана) без цього
+    /// валили весь прогон — див. docs/CHANGELOG.md, запис 002.
+    /// </summary>
+    public bool? HasAudio { get; set; }
     /// <summary>Транскрипція (Whisper) — заповнюється ліниво, коли потрібна.</summary>
     public string? Transcript { get; set; }
 }
@@ -23,6 +30,13 @@ public sealed class Segment
     public required string SourceId { get; init; }
     public TimeSpan Start { get; init; }
     public TimeSpan Duration { get; init; }
+    /// <summary>
+    /// Чи є в сегменті звук (успадковується від джерела при нарізці). Дефолт true —
+    /// поведінка як раніше. false → склейка підставляє тишу замість аудіодоріжки.
+    /// Крок, що сам створює сегменти (напр. майбутня AI-генерація кліпів), має
+    /// виставити це поле чесно.
+    /// </summary>
+    public bool HasAudio { get; init; } = true;
 }
 
 /// <summary>Аудіо-доріжка (озвучка чи музика).</summary>

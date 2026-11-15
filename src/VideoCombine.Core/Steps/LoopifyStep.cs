@@ -112,12 +112,15 @@ public sealed class LoopifyStep : IStep
         // незалежно від того, де він викликається (RunCrossfadeAsync або тест).
         var fade = Math.Min(fadeSec, durationSec * 0.4);
         var offset = Math.Max(0, durationSec - fade);
+        // Числа — через FfmpegFormat (крапка, не кома): docs/CHANGELOG.md, запис 003.
+        var fadeText = FfmpegFormat.Seconds(fade);
+        var offsetText = FfmpegFormat.Seconds(offset);
         return new[]
         {
             "-i", input, "-i", input,
             "-filter_complex",
-            $"[0:v][1:v]xfade=transition=fade:duration={fade:0.###}:offset={offset:0.###}[outv];" +
-            $"[0:a][1:a]acrossfade=d={fade:0.###}[outa]",
+            $"[0:v][1:v]xfade=transition=fade:duration={fadeText}:offset={offsetText}[outv];" +
+            $"[0:a][1:a]acrossfade=d={fadeText}[outa]",
             "-map", "[outv]", "-map", "[outa]",
             "-c:v", "libx264", "-preset", "medium", "-crf", "20",
             "-c:a", "aac",
@@ -262,7 +265,7 @@ public sealed class LoopifyStep : IStep
         string input, string refPng, string ssimLog, double searchStart) => new[]
     {
         "-loop", "1", "-i", refPng,               // еталон — перший кадр (нескінченний)
-        "-ss", searchStart.ToString("0.###"),
+        "-ss", FfmpegFormat.Seconds(searchStart),
         "-i", input,                               // відрізок для пошуку
         "-lavfi", $"ssim=stats_file={ssimLog}",
         "-shortest", "-f", "null", "-"
@@ -275,7 +278,7 @@ public sealed class LoopifyStep : IStep
     public static IReadOnlyList<string> BuildTrimArgs(string input, string output, double trimToSec) => new[]
     {
         "-i", input,
-        "-t", trimToSec.ToString("0.###"),
+        "-t", FfmpegFormat.Seconds(trimToSec),
         "-c", "copy",
         "-y", output
     };

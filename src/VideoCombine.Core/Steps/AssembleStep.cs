@@ -114,9 +114,15 @@ public sealed class AssembleStep : IStep
         // Кожен вхід приводимо до спільного формату, ІНАКШЕ concat падає (код -22),
         // коли сегменти різної роздільності/fps (напр. 1080p + 720p джерела).
         // Нормалізація лишається на CPU; h264_nvenc приймає кадри з софт-фільтрів сам.
+        // Передаємо САМІ сегменти (не лише кількість): фільтру треба знати, які з них
+        // без звуку, щоб підставити тишу (docs/CHANGELOG.md, запис 002).
         var filter = BuildConcatFilter(
-            segments.Count, _settings.TargetWidth, _settings.TargetHeight, _settings.TargetFps,
+            segments, _settings.TargetWidth, _settings.TargetHeight, _settings.TargetFps,
             _settings.FitMode);
+
+        var silent = segments.Count(s => !s.HasAudio);
+        if (silent > 0)
+            progress.Log(LogLevel.Info, $"Сегментів без звуку: {silent} із {segments.Count} — підставляємо тишу");
 
         // Граф фільтрів пишемо у ФАЙЛ і передаємо через -filter_complex_script, а не
         // -filter_complex. Інакше на великій к-сті сегментів (сотні) стрічка фільтра
@@ -278,9 +284,36 @@ public sealed class AssembleStep : IStep
     /// Далі: setsar=1 (квадратний піксель) → fps (єдина частота).
     /// Без цього concat падає (код -22) на сегментах різної роздільності/fps.
     /// Аудіо: aresample — щоб частоти дискретизації теж збіглися.
+    ///
+    /// Це перевантаження вважає, що звук є в КОЖНОГО входу (стара поведінка).
+    /// Реальний прогін викликає перевантаження зі списком сегментів — нижче.
     /// </summary>
-    public static string BuildConcatFilter(int n, int width, int height, int fps, string fitMode)
+    public static string BuildConcatFilter(int n, int width, int height, int fps, string fitMode) =>
+        BuildConcatFilter(Enumerable.Repeat<TimeSpan?>(null, n).ToArray(), width, height, fps, fitMode);
+
+    /// <summary>
+    /// Те саме, але з урахуванням сегментів БЕЗ звуку (Segment.HasAudio == false):
+    /// для них замість аудіодоріжки входу підставляється тиша.
+    ///
+    /// Навіщо: concat вимагає, щоб у кожного входу були і відео, і аудіо. Якщо
+    /// посилатися на [i:a:0] у файлі без звуку, ffmpeg падає ще до старту
+    /// ("Stream specifier ':a:0' ... matches no streams") — і з ним увесь прогон.
+    /// Німі джерела — буденність: стокові кліпи, AI-генерація, запис екрана.
+    /// </summary>
+    public static string BuildConcatFilter(
+        IReadOnlyList<Segment> segments, int width, int height, int fps, string fitMode) =>
+        BuildConcatFilter(
+            segments.Select(s => s.HasAudio ? (TimeSpan?)null : s.Duration).ToArray(),
+            width, height, fps, fitMode);
+
+    /// <summary>
+    /// Спільна реалізація. silence[i] == null → у входу i є звук, беремо його доріжку;
+    /// інакше це тривалість тиші, яку треба згенерувати для входу i.
+    /// </summary>
+    private static string BuildConcatFilter(
+        IReadOnlyList<TimeSpan?> silence, int width, int height, int fps, string fitMode)
     {
+        var n = silence.Count;
         var crop = fitMode.Equals("crop", StringComparison.OrdinalIgnoreCase);
         // Спосіб вписати кадр: crop заповнює (increase) і ріже зайве; fit вписує (decrease) і паддить.
         var scaleFit = crop
@@ -290,13 +323,34 @@ public sealed class AssembleStep : IStep
         var sb = new StringBuilder();
         for (int i = 0; i < n; i++)
         {
-            sb.Append($"[{i}:v:0]{scaleFit},setsar=1,fps={fps}[v{i}];")
-              .Append($"[{i}:a:0]aresample=async=1[a{i}];");
+            sb.Append($"[{i}:v:0]{scaleFit},setsar=1,fps={fps}[v{i}];");
+
+            if (silence[i] is { } quiet)
+                sb.Append($"{BuildSilenceSource(quiet)}[a{i}];");
+            else
+                sb.Append($"[{i}:a:0]aresample=async=1[a{i}];");
         }
         for (int i = 0; i < n; i++)
             sb.Append($"[v{i}][a{i}]");
         sb.Append($"concat=n={n}:v=1:a=1[outv][outa]");
         return sb.ToString();
+    }
+
+    /// <summary>
+    /// Джерело тиші заданої тривалості для сегмента без звуку: anullsrc генерує
+    /// нескінченну тишу, atrim обрізає її до довжини сегмента.
+    ///
+    /// Тривалість беремо планову (Segment.Duration). Якщо вона вийде трохи коротшою
+    /// за реальне відео сегмента — не страшно: concat сам доповнює коротше аудіо
+    /// тишею до довжини відео. Нуль/від'ємне/мізерне значення замінюємо на 0.1 с, щоб
+    /// фільтр лишався коректним. Число форматуємо через FfmpegFormat (крапка, не кома) —
+    /// інакше на українській/німецькій локалі ffmpeg не розбере "2,5".
+    /// Винесено окремо й публічно — для тесту.
+    /// </summary>
+    public static string BuildSilenceSource(TimeSpan duration)
+    {
+        var seconds = duration.TotalSeconds >= 0.001 ? duration.TotalSeconds : 0.1;
+        return $"anullsrc=channel_layout=stereo:sample_rate=48000,atrim=duration={FfmpegFormat.Seconds(seconds)}";
     }
 
     /// <summary>

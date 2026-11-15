@@ -68,15 +68,8 @@ public sealed class CutStep : IStep
             await gate.WaitAsync(token);
             try
             {
-                var args = new[]
-                {
-                    "-ss", job.Start.TotalSeconds.ToString("0.###"),
-                    "-i", job.InputPath,
-                    "-t", job.Length.TotalSeconds.ToString("0.###"),
-                    "-c", "copy", "-y", job.OutputPath
-                };
-
-                var code = await _runner.RunAsync(context.Settings.FfmpegPath, args, null, token);
+                var code = await _runner.RunAsync(
+                    context.Settings.FfmpegPath, BuildCutArgs(job), null, token);
                 if (code == 0)
                 {
                     var seg = new Segment
@@ -85,7 +78,8 @@ public sealed class CutStep : IStep
                         FilePath = job.OutputPath,
                         SourceId = job.SourceId,
                         Start = job.Start,
-                        Duration = job.Length
+                        Duration = job.Length,
+                        HasAudio = job.HasAudio
                     };
                     lock (lockObj) produced.Add(seg);
                 }
@@ -129,6 +123,21 @@ public sealed class CutStep : IStep
     }
 
     /// <summary>
+    /// Аргументи ffmpeg для одного відрізка: -ss (звідки) перед -i — швидкий пошук,
+    /// -t (скільки), -c copy — без перекодування. Час форматуємо через FfmpegFormat
+    /// (завжди з крапкою): на локалі з комою "-ss 5,123" ffmpeg відкидав, і майже
+    /// всі сегменти мовчки пропускались (docs/CHANGELOG.md, запис 003).
+    /// Винесено окремо й публічно — під тести.
+    /// </summary>
+    public static IReadOnlyList<string> BuildCutArgs(CutJob job) => new[]
+    {
+        "-ss", FfmpegFormat.Seconds(job.Start),
+        "-i", job.InputPath,
+        "-t", FfmpegFormat.Seconds(job.Length),
+        "-c", "copy", "-y", job.OutputPath
+    };
+
+    /// <summary>
     /// Планує всі відрізки всіх джерел у плаский список — ЧИСТА, однопотокова,
     /// тестована функція. Джерела без Duration пропускає. Random передається
     /// ззовні: у прогоні — new Random() (нарізка випадкова щоразу), у тестах —
@@ -158,7 +167,9 @@ public sealed class CutStep : IStep
                     InputPath: source.FilePath,
                     OutputPath: Path.Combine(workingDir, id + ".mp4"),
                     Start: pos,
-                    Length: len));
+                    Length: len,
+                    // null (не аналізували) → вважаємо, що звук є, як було раніше.
+                    HasAudio: source.HasAudio ?? true));
 
                 pos += len;
                 idx++;
@@ -175,7 +186,8 @@ public readonly record struct CutJob(
     string InputPath,
     string OutputPath,
     TimeSpan Start,
-    TimeSpan Length);
+    TimeSpan Length,
+    bool HasAudio = true);
 
 /// <summary>Налаштування нарізки (серіалізуються в JSON-рецепт).</summary>
 public sealed class CutSettings
