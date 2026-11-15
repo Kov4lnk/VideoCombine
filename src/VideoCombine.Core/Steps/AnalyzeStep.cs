@@ -109,6 +109,7 @@ public sealed class AnalyzeStep : IStep
         source.Width = meta.Width;
         source.Height = meta.Height;
         source.Fps = meta.Fps;
+        source.HasAudio = meta.HasAudio;
 
         if (source.Duration is null)
             throw new InvalidOperationException("ffprobe не повернув тривалість");
@@ -119,7 +120,8 @@ public sealed class AnalyzeStep : IStep
         var dur = s.Duration is { } d ? $"{d.TotalSeconds:0.#}с" : "?";
         var res = s.Width is { } w && s.Height is { } h ? $"{w}×{h}" : "?";
         var fps = s.Fps is { } f ? $"{f:0.##}fps" : "?";
-        return $"{dur}, {res}, {fps}";
+        var audio = s.HasAudio == false ? ", без звуку" : "";
+        return $"{dur}, {res}, {fps}{audio}";
     }
 
     /// <summary>
@@ -135,6 +137,8 @@ public sealed class AnalyzeStep : IStep
         TimeSpan? duration = null;
         int? width = null, height = null;
         double? fps = null;
+        bool hasAudio = false;
+        bool videoSeen = false;
 
         // Тривалість із секції format (найнадійніше).
         if (root.TryGetProperty("format", out var format) &&
@@ -145,14 +149,27 @@ public sealed class AnalyzeStep : IStep
         }
 
         // Перший відео-потік — розмір, fps, і тривалість як запасний варіант.
+        // Потоки проходимо ВСІ (не зупиняємось на відео): аудіо може йти після нього,
+        // а знати, чи є звук, треба склейці (docs/CHANGELOG.md, запис 002).
         if (root.TryGetProperty("streams", out var streams) &&
             streams.ValueKind == JsonValueKind.Array)
         {
             foreach (var stream in streams.EnumerateArray())
             {
-                if (!stream.TryGetProperty("codec_type", out var ct) ||
-                    ct.GetString() != "video")
+                if (!stream.TryGetProperty("codec_type", out var ct))
                     continue;
+
+                var codecType = ct.GetString();
+                if (codecType == "audio")
+                {
+                    hasAudio = true;
+                    continue;
+                }
+
+                // Лише ПЕРШИЙ відео-потік (другим буває вбудована обкладинка).
+                if (codecType != "video" || videoSeen)
+                    continue;
+                videoSeen = true;
 
                 if (stream.TryGetProperty("width", out var w) && w.TryGetInt32(out var wi))
                     width = wi;
@@ -167,12 +184,10 @@ public sealed class AnalyzeStep : IStep
                 {
                     duration = TimeSpan.FromSeconds(sSeconds);
                 }
-
-                break; // перший відео-потік
             }
         }
 
-        return new ProbeResult(duration, width, height, fps);
+        return new ProbeResult(duration, width, height, fps, hasAudio);
     }
 
     private static bool TryParseSeconds(JsonElement el, out double seconds)
@@ -199,5 +214,5 @@ public sealed class AnalyzeStep : IStep
     }
 }
 
-/// <summary>Результат розбору ffprobe.</summary>
-public sealed record ProbeResult(TimeSpan? Duration, int? Width, int? Height, double? Fps);
+/// <summary>Результат розбору ffprobe. HasAudio — чи є хоч один аудіо-потік.</summary>
+public sealed record ProbeResult(TimeSpan? Duration, int? Width, int? Height, double? Fps, bool HasAudio);
